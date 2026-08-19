@@ -1,0 +1,17 @@
+{
+  "name": "movie-stream-site",
+  "version": "1.0.0",
+  "description": "Search movies & TV shows via TheMovieDB and stream them through an embeddable player (111movies.net by default).",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

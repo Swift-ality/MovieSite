@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StreamSearch</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-logo">🎬</span>
+      <span class="brand-name">Stream<span>Search</span></span>
+    </div>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input id="search" type="search" placeholder="Search movies & TV shows…" autocomplete="off" autofocus />
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="status" class="status"></div>
+    <div id="results" class="grid" aria-live="polite"></div>
+  </main>
+
+  <!-- Player modal -->
+  <div id="player-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-inner">
+      <div class="modal-head">
+        <div class="modal-title" id="modal-title"></div>
+        <button class="icon-btn" id="close-modal" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div id="tv-controls" class="tv-controls hidden">
+        <label>Season
+          <select id="season-select"></select>
+        </label>
+        <label>Episode
+          <select id="episode-select"></select>
+        </label>
+        <button id="play-episode" class="play-btn">▶ Play</button>
+      </div>
+
+      <div class="player-frame">
+        <div id="player-loading" class="player-loading">Loading player…</div>
+        <iframe
+          id="player"
+          allowfullscreen
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          referrerpolicy="origin"
+        ></iframe>
+      </div>
+
+      <p class="player-note">
+        Playback is provided by a third-party embed service. If a video doesn't load,
+        try a different title or check that the service is online.
+      </p>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <span>Search data from TheMovieDB · Playback via embed player</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+{
+    "_comment": "Pterodactyl Egg - Movie & TV Stream Search Site. Import via Admin > Nests > Import Egg.",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-19T00:00:00+00:00",
+    "name": "Movie & TV Stream Search Site",
+    "author": "pvmook@planet.nl",
+    "description": "A Node.js web app that searches TheMovieDB for movies & TV shows and streams them through an embeddable player (111movies.net by default). Serves a search UI on the allocated port.",
+    "features": null,
+    "docker_images": {
+        "Node.js 20": "ghcr.io/pterodactyl/yolks:nodejs_20",
+        "Node.js 21": "ghcr.io/pterodactyl/yolks:nodejs_21",
+        "Node.js 18": "ghcr.io/pterodactyl/yolks:nodejs_18"
+    },
+    "file_denylist": [],
+    "startup": "if [[ -d .git ]] && [[ \"{{AUTO_UPDATE}}\" == \"1\" ]]; then echo 'Updating from git...'; git pull; fi; if [ -f /home/container/package.json ]; then echo 'Installing dependencies...'; npm install --omit=dev --no-audit --no-fund; fi; echo 'Starting server...'; node /home/container/{{MAIN_FILE}}",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"listening on\"\r\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Movie & TV Stream Search Site - installation script\nset -e\n\napt update -y\napt install -y git curl jq file unzip\n\nmkdir -p /mnt/server\ncd /mnt/server\n\nif [ -n \"${GIT_ADDRESS}\" ]; then\n    echo \"Using git repository: ${GIT_ADDRESS}\"\n\n    # Ensure the URL ends with .git\n    if [[ ${GIT_ADDRESS} != *.git ]]; then\n        GIT_ADDRESS=\"${GIT_ADDRESS}.git\"\n    fi\n\n    # Inject credentials for private repositories\n    if [ -n \"${USERNAME}\" ] && [ -n \"${ACCESS_TOKEN}\" ]; then\n        echo \"Using supplied git credentials\"\n        GIT_ADDRESS=\"https://${USERNAME}:${ACCESS_TOKEN}@$(echo -e ${GIT_ADDRESS} | cut -d/ -f3-)\"\n    fi\n\n    BRANCH=\"${BRANCH:-main}\"\n\n    if [ \"$(ls -A /mnt/server 2>/dev/null)\" ]; then\n        echo \"/mnt/server is not empty.\"\n        if [ -d .git ]; then\n            echo \"Existing repository found - pulling latest changes...\"\n            git pull || echo \"git pull failed, continuing with existing files\"\n        else\n            echo \"Cloning into a temporary directory and copying files in...\"\n            git clone --depth 1 --single-branch --branch \"${BRANCH}\" \"${GIT_ADDRESS}\" /tmp/app\n            cp -a /tmp/app/. /mnt/server/\n            rm -rf /tmp/app\n        fi\n    else\n        echo \"Cloning ${GIT_ADDRESS} (branch ${BRANCH})...\"\n        git clone --depth 1 --single-branch --branch \"${BRANCH}\" \"${GIT_ADDRESS}\" .\n    fi\nelse\n    echo \"=====================================================\"\n    echo \"No GIT_ADDRESS provided - skipping git clone.\"\n    echo \"Upload your project files (server.js, package.json and\"\n    echo \"the public/ folder) to /home/container via SFTP or the\"\n    echo \"panel File Manager, then (re)start the server.\"\n    echo \"=====================================================\"\nfi\n\necho \"-----------------------------------------------------\"\necho \"Install stage complete.\"\necho \"npm install runs automatically on first startup.\"\necho \"-----------------------------------------------------\"\n",
+            "container": "ghcr.io/pterodactyl/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "TMDB API Key",
+            "description": "Your TheMovieDB API key. Get one free at themoviedb.org > Settings > API. Accepts a v3 API key or a v4 read access token. REQUIRED for search to work.",
+            "env_variable": "TMDB_API_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "Player Base URL",
+            "description": "Base URL of the embed/streaming player (no trailing slash). Change only if the provider's domain changes.",
+            "env_variable": "PLAYER_BASE_URL",
+            "default_value": "https://111movies.net",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Repository",
+            "description": "Optional. HTTPS git URL to install the app from (e.g. https://github.com/you/movie-stream-site). Leave blank to upload files manually.",
+            "env_variable": "GIT_ADDRESS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Branch",
+            "description": "Branch to clone / pull when using a git repository.",
+            "env_variable": "BRANCH",
+            "default_value": "main",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Update",
+            "description": "Set to 1 to 'git pull' on every startup (only applies when installed from a git repository).",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Main File",
+            "description": "Node entry point to run.",
+            "env_variable": "MAIN_FILE",
+            "default_value": "server.js",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Username",
+            "description": "Optional. Username for cloning a private git repository.",
+            "env_variable": "USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Access Token",
+            "description": "Optional. Personal access token for cloning a private git repository.",
+            "env_variable": "ACCESS_TOKEN",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        }
+    ]
+}
