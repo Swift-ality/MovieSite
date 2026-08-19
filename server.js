@@ -34,8 +34,49 @@ const TMDB_API_KEY = (process.env.TMDB_API_KEY || '').trim();
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
-// Base URL of the embed player. Strip any trailing slash.
+// Base URL for the 111Movies source (its domain changes now and then, so it
+// stays overridable through PLAYER_BASE_URL). Strip any trailing slash.
 const PLAYER_BASE_URL = (process.env.PLAYER_BASE_URL || 'https://111movies.net').replace(/\/+$/, '');
+
+// Embed sources the viewer can switch between. Each has URL templates with
+// {id}, {season} and {episode} placeholders the frontend fills in.
+const SOURCES = [
+  {
+    id: '111movies',
+    name: '111Movies',
+    movie: `${PLAYER_BASE_URL}/movie/{id}`,
+    tv: `${PLAYER_BASE_URL}/tv/{id}/{season}/{episode}`,
+  },
+  {
+    id: 'vidfast',
+    name: 'VidFast',
+    movie: 'https://vidfast.vc/movie/{id}?autoPlay=true',
+    tv: 'https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true',
+  },
+  {
+    id: 'vidsrc',
+    name: 'VidSrc',
+    movie: 'https://vidsrc.sbs/embed/movie/{id}',
+    tv: 'https://vidsrc.sbs/embed/tv/{id}/{season}/{episode}',
+  },
+  {
+    id: 'cinesrc',
+    name: 'CineSrc',
+    movie: 'https://cinesrc.st/embed/movie/{id}',
+    tv: 'https://cinesrc.st/embed/tv/{id}?s={season}&e={episode}',
+  },
+  {
+    id: 'videasy',
+    name: 'VidEasy',
+    movie: 'https://player.videasy.net/movie/{id}',
+    tv: 'https://player.videasy.net/tv/{id}/{season}/{episode}',
+  },
+];
+
+// Which source is selected by default (must be one of the SOURCES ids).
+const DEFAULT_SOURCE = SOURCES.some((s) => s.id === process.env.DEFAULT_SOURCE)
+  ? process.env.DEFAULT_SOURCE
+  : SOURCES[0].id;
 
 if (!TMDB_API_KEY) {
   console.warn('[WARN] TMDB_API_KEY is not set — search will not work until you configure it.');
@@ -84,7 +125,8 @@ app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] })
 // Small config payload the frontend needs (never exposes the API key itself).
 app.get('/api/config', (_req, res) => {
   res.json({
-    playerBaseUrl: PLAYER_BASE_URL,
+    sources: SOURCES,
+    defaultSource: DEFAULT_SOURCE,
     hasApiKey: Boolean(TMDB_API_KEY),
   });
 });

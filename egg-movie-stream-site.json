@@ -41,13 +41,23 @@
             "field_type": "text"
         },
         {
-            "name": "Player Base URL",
-            "description": "Base URL of the embed/streaming player (no trailing slash). Change only if the provider's domain changes.",
+            "name": "111Movies Base URL",
+            "description": "Base URL for the 111Movies source only (no trailing slash). Change if that provider's domain moves. The other sources (VidFast, VidSrc, CineSrc, VidEasy) are built in.",
             "env_variable": "PLAYER_BASE_URL",
             "default_value": "https://111movies.net",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Default Source",
+            "description": "Which streaming source is selected first: 111movies, vidfast, vidsrc, cinesrc, or videasy. Viewers can switch per-title in the player.",
+            "env_variable": "DEFAULT_SOURCE",
+            "default_value": "111movies",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:111movies,vidfast,vidsrc,cinesrc,videasy",
             "field_type": "text"
         },
         {

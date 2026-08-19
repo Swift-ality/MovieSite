@@ -1,13 +1,24 @@
 # 🎬 StreamSearch
 
 A small self-hosted web app that lets you **search movies & TV shows** (powered by
-[TheMovieDB](https://www.themoviedb.org/)) and **stream them** through an embeddable
-player. Search results show the poster + title; clicking one opens a player.
+[TheMovieDB](https://www.themoviedb.org/)) and **stream them** through embeddable
+players. The front page infinitely scrolls trending titles; the search bar shows live
+poster previews; the player is full-screen capable and lets viewers **switch between
+several streaming sources**.
 
-- **Movies** embed `https://111movies.net/movie/{id}`
-- **TV shows** embed `https://111movies.net/tv/{id}/{season}/{episode}` with season/episode pickers
+Sources you can switch between in the player:
 
-The TMDB ID is used directly (111movies.net accepts TMDB IDs, and IMDB IDs with the `tt` prefix).
+| Source | Movie URL | TV URL |
+|---|---|---|
+| **111Movies** | `…/movie/{id}` | `…/tv/{id}/{s}/{e}` |
+| **VidFast** | `vidfast.vc/movie/{id}?autoPlay=true` | `vidfast.vc/tv/{id}/{s}/{e}?autoPlay=true` |
+| **VidSrc** | `vidsrc.sbs/embed/movie/{id}` | `vidsrc.sbs/embed/tv/{id}/{s}/{e}` |
+| **CineSrc** | `cinesrc.st/embed/movie/{id}` | `cinesrc.st/embed/tv/{id}?s={s}&e={e}` |
+| **VidEasy** | `player.videasy.net/movie/{id}` | `player.videasy.net/tv/{id}/{s}/{e}` |
+
+The TMDB ID is used directly (these providers accept TMDB IDs, and IMDB IDs with the
+`tt` prefix). The chosen source is remembered per browser. Sources are defined in
+[`server.js`](server.js) (`SOURCES`) — add or edit templates there.
 Designed to run behind a **Pterodactyl egg** (included) or standalone with Node.js.
 
 ---
@@ -86,7 +97,8 @@ custom egg.
 | Variable | Env | Default | Notes |
 |---|---|---|---|
 | TMDB API Key | `TMDB_API_KEY` | *(empty)* | **Required.** v3 key or v4 token. |
-| Player Base URL | `PLAYER_BASE_URL` | `https://111movies.net` | Change only if the provider domain changes. |
+| 111Movies Base URL | `PLAYER_BASE_URL` | `https://111movies.net` | Base for the 111Movies source only; change if that domain moves. |
+| Default Source | `DEFAULT_SOURCE` | `111movies` | First-selected source: `111movies`, `vidfast`, `vidsrc`, `cinesrc`, `videasy`. |
 | Git Repository | `GIT_ADDRESS` | `https://github.com/Swift-ality/MovieSite` | HTTPS repo URL; blank = manual upload. |
 | Git Branch | `BRANCH` | `main` | |
 | Auto Update | `AUTO_UPDATE` | `0` | `1` = `git pull` each startup. |

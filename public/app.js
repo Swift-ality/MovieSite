@@ -2,8 +2,6 @@
 (() => {
   'use strict';
 
-  let playerBaseUrl = 'https://111movies.net';
-
   const $ = (sel) => document.querySelector(sel);
   const searchInput = $('#search');
   const suggestionsEl = $('#suggestions');
@@ -19,10 +17,17 @@
   const seasonSelect = $('#season-select');
   const episodeSelect = $('#episode-select');
   const playEpisodeBtn = $('#play-episode');
+  const sourceSelect = $('#source-select');
   const fullscreenBtn = $('#fullscreen-btn');
   const closeBtn = $('#close-modal');
   const iframe = $('#player');
   const playerLoading = $('#player-loading');
+
+  // Embed sources (loaded from /api/config).
+  let sources = [];
+  const sourceById = {};
+  let currentSourceId = null;
+  let currentMedia = null;   // { id, mediaType } currently open in the player
 
   let currentTvId = null;
   let lastResults = [];      // first page of the current search (for the dropdown)
@@ -81,7 +86,16 @@
   async function init() {
     try {
       const cfg = await getJson('/api/config');
-      if (cfg.playerBaseUrl) playerBaseUrl = cfg.playerBaseUrl;
+      sources = cfg.sources || [];
+      sources.forEach((s) => { sourceById[s.id] = s; });
+
+      let saved = null;
+      try { saved = localStorage.getItem('ss_source'); } catch (_) { /* ignore */ }
+      currentSourceId = (saved && sourceById[saved])
+        ? saved
+        : (cfg.defaultSource && sourceById[cfg.defaultSource] ? cfg.defaultSource : (sources[0] && sources[0].id));
+      buildSourceSelect();
+
       if (!cfg.hasApiKey) {
         setStatus('⚠️ The server has no TMDB API key configured. Set <b>TMDB_API_KEY</b> and restart.', true);
         return;
@@ -90,6 +104,20 @@
       /* non-fatal */
     }
     resetFeed('trending', '');
+  }
+
+  function buildSourceSelect() {
+    if (!sources.length) return;
+    sourceSelect.innerHTML = sources
+      .map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`)
+      .join('');
+    sourceSelect.value = currentSourceId;
+  }
+
+  // Fill {id} / {season} / {episode} placeholders in a source URL template.
+  function buildUrl(tpl, vars) {
+    return tpl.replace(/\{(id|season|episode)\}/g, (_, k) =>
+      (vars[k] != null ? encodeURIComponent(vars[k]) : ''));
   }
 
   // --- infinite-scroll feed ------------------------------------------------
@@ -302,18 +330,34 @@
 
   // --- opening / playback --------------------------------------------------
   function openItem(item) {
+    currentMedia = { id: item.id, mediaType: item.mediaType };
     modalTitle.textContent = item.title + (item.year ? ` (${item.year})` : '');
     if (item.mediaType === 'movie') {
       tvControls.classList.add('hidden');
       currentTvId = null;
       openModal();
-      setIframe(`${playerBaseUrl}/movie/${item.id}`);
+      playCurrent();
     } else {
       currentTvId = item.id;
       tvControls.classList.remove('hidden');
       openModal();
       setIframe('');
       loadSeasons(item.id);
+    }
+  }
+
+  // Build and load the embed URL for the current title on the current source.
+  function playCurrent() {
+    if (!currentMedia) return;
+    const src = sourceById[currentSourceId] || sources[0];
+    if (!src) return;
+    if (currentMedia.mediaType === 'movie') {
+      setIframe(buildUrl(src.movie, { id: currentMedia.id }));
+    } else {
+      const season = seasonSelect.value;
+      const episode = episodeSelect.value;
+      if (!season || !episode || Number.isNaN(Number(season)) || Number.isNaN(Number(episode))) return;
+      setIframe(buildUrl(src.tv, { id: currentMedia.id, season, episode }));
     }
   }
 
@@ -346,24 +390,23 @@
         .map((e) => `<option value="${e.episodeNumber}">E${e.episodeNumber} · ${escapeHtml(e.name)}</option>`)
         .join('');
       episodeSelect.value = String(eps[0].episodeNumber);
-      if (autoplayFirst) playCurrentEpisode();
+      if (autoplayFirst) playCurrent();
     } catch (err) {
       episodeSelect.innerHTML = '<option>Error</option>';
     }
   }
 
-  function playCurrentEpisode() {
-    if (!currentTvId) return;
-    const season = seasonSelect.value;
-    const episode = episodeSelect.value;
-    if (!season || !episode || Number.isNaN(Number(season)) || Number.isNaN(Number(episode))) return;
-    setIframe(`${playerBaseUrl}/tv/${currentTvId}/${season}/${episode}`);
-  }
-
   seasonSelect.addEventListener('change', () => {
     if (currentTvId) loadEpisodes(currentTvId, seasonSelect.value, false);
   });
-  playEpisodeBtn.addEventListener('click', playCurrentEpisode);
+  playEpisodeBtn.addEventListener('click', playCurrent);
+
+  // Switch streaming source and reload the current title.
+  sourceSelect.addEventListener('change', () => {
+    currentSourceId = sourceSelect.value;
+    try { localStorage.setItem('ss_source', currentSourceId); } catch (_) { /* ignore */ }
+    playCurrent();
+  });
 
   // --- modal ---------------------------------------------------------------
   function setIframe(src) {
@@ -394,6 +437,7 @@
     document.body.style.overflow = '';
     iframe.removeAttribute('src');
     currentTvId = null;
+    currentMedia = null;
   }
 
   closeBtn.addEventListener('click', closeModal);
