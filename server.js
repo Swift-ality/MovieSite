@@ -51,7 +51,7 @@ const SOURCES = [
     id: 'vidfast',
     name: 'VidFast',
     movie: 'https://vidfast.vc/movie/{id}?autoPlay=true',
-    tv: 'https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true',
+    tv: 'https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true&nextButton=true&autoNext=true',
   },
   {
     id: 'vidsrc',
@@ -69,7 +69,7 @@ const SOURCES = [
     id: 'videasy',
     name: 'VidEasy',
     movie: 'https://player.videasy.net/movie/{id}',
-    tv: 'https://player.videasy.net/tv/{id}/{season}/{episode}',
+    tv: 'https://player.videasy.net/tv/{id}/{season}/{episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=true',
   },
 ];
 
