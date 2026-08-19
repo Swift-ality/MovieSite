@@ -52,9 +52,9 @@
         },
         {
             "name": "Git Repository",
-            "description": "Optional. HTTPS git URL to install the app from (e.g. https://github.com/you/movie-stream-site). Leave blank to upload files manually.",
+            "description": "HTTPS git URL to install the app from. Defaults to the project repo. Leave blank to upload files manually instead.",
             "env_variable": "GIT_ADDRESS",
-            "default_value": "",
+            "default_value": "https://github.com/Swift-ality/MovieSite",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string|max:255",

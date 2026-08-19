@@ -69,8 +69,8 @@ custom egg.
 ### Get the code onto the server — pick one
 
 **Option A — Git (recommended, supports auto-update):**
-- Push this project to a Git host (GitHub/GitLab).
-- Set the **Git Repository** variable to the HTTPS URL (e.g. `https://github.com/you/movie-stream-site`).
+- The **Git Repository** variable already defaults to `https://github.com/Swift-ality/MovieSite`,
+  so there's nothing to set unless you're using your own fork.
 - Optionally set **Git Branch**, and **Git Username** + **Git Access Token** for private repos.
 - Set **Auto Update** to `1` to `git pull` on every restart.
 - (Re)install / start the server — it clones the repo, runs `npm install`, then starts.
@@ -87,7 +87,7 @@ custom egg.
 |---|---|---|---|
 | TMDB API Key | `TMDB_API_KEY` | *(empty)* | **Required.** v3 key or v4 token. |
 | Player Base URL | `PLAYER_BASE_URL` | `https://111movies.net` | Change only if the provider domain changes. |
-| Git Repository | `GIT_ADDRESS` | *(empty)* | Optional HTTPS repo URL. |
+| Git Repository | `GIT_ADDRESS` | `https://github.com/Swift-ality/MovieSite` | HTTPS repo URL; blank = manual upload. |
 | Git Branch | `BRANCH` | `main` | |
 | Auto Update | `AUTO_UPDATE` | `0` | `1` = `git pull` each startup. |
 | Main File | `MAIN_FILE` | `server.js` | Node entry point. |
