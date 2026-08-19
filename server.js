@@ -79,10 +79,13 @@ const DEFAULT_SOURCE = SOURCES.some((s) => s.id === process.env.DEFAULT_SOURCE)
   : SOURCES[0].id;
 
 // Anime is streamed via VidEasy's AniList-based endpoints (sub + dub, auto).
+// Use the exact documented forms — the /anime/ endpoint takes no extra query
+// params (the nextEpisode/autoplayNextEpisode params are for /tv/ only and make
+// the anime player hang).
 const ANIME_SOURCE = {
   name: 'VidEasy',
   movie: 'https://player.videasy.net/anime/{id}',
-  show: 'https://player.videasy.net/anime/{id}/{episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=true',
+  show: 'https://player.videasy.net/anime/{id}/{episode}',
 };
 
 // Genres shown in the Anime sidebar (AniList genre names).
