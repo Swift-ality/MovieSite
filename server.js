@@ -89,6 +89,13 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
+// Clamp an incoming page query param to a sane range (TMDB caps at 500).
+function clampPage(v) {
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 500);
+}
+
 // Shape a raw TMDB movie/tv record into the compact form the frontend uses.
 function mapMedia(r) {
   return {
@@ -102,38 +109,40 @@ function mapMedia(r) {
   };
 }
 
-// Multi search (movies + TV shows).
+// Multi search (movies + TV shows), paginated.
 app.get('/api/search', async (req, res) => {
   if (!requireApiKey(res)) return;
 
   const q = String(req.query.q || '').trim();
-  if (!q) return res.json({ results: [] });
+  if (!q) return res.json({ results: [], page: 1, totalPages: 0 });
+  const page = clampPage(req.query.page);
 
   try {
-    const data = await tmdb('/search/multi', { query: q, include_adult: 'false', page: '1' });
+    const data = await tmdb('/search/multi', { query: q, include_adult: 'false', page: String(page) });
     const results = (data.results || [])
       .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
       .map(mapMedia);
 
-    res.json({ results });
+    res.json({ results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) });
   } catch (err) {
     console.error('search error:', err.message);
     res.status(err.status || 500).json({ error: 'Search failed.', detail: err.message });
   }
 });
 
-// Trending this week (front page): top 20 movies & shows.
-app.get('/api/trending', async (_req, res) => {
+// Trending this week (front page), paginated for infinite scroll.
+app.get('/api/trending', async (req, res) => {
   if (!requireApiKey(res)) return;
 
+  const page = clampPage(req.query.page);
+
   try {
-    const data = await tmdb('/trending/all/week', { page: '1' });
+    const data = await tmdb('/trending/all/week', { page: String(page) });
     const results = (data.results || [])
       .filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path)
-      .slice(0, 20)
       .map(mapMedia);
 
-    res.json({ results });
+    res.json({ results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) });
   } catch (err) {
     console.error('trending error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load trending.', detail: err.message });

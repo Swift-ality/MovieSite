@@ -10,6 +10,7 @@
   const resultsEl = $('#results');
   const statusEl = $('#status');
   const sectionTitle = $('#section-title');
+  const feedEnd = $('#feed-end');
 
   const modal = $('#player-modal');
   const modalTitle = $('#modal-title');
@@ -24,8 +25,17 @@
   const playerLoading = $('#player-loading');
 
   let currentTvId = null;
-  let lastResults = [];
+  let lastResults = [];      // first page of the current search (for the dropdown)
   let activeSuggestion = -1;
+
+  // Infinite-scroll feed state.
+  let mode = 'trending';     // 'trending' | 'search'
+  let query = '';
+  let page = 0;              // highest page loaded so far
+  let totalPages = 1;
+  let loading = false;
+  let done = false;
+  const seen = new Set();
 
   const PLACEHOLDER =
     'data:image/svg+xml;utf8,' +
@@ -48,6 +58,18 @@
     statusEl.classList.toggle('warn', warn);
   }
 
+  function showFeedEnd(state) {
+    if (state === 'loading') {
+      feedEnd.textContent = 'Loading more…';
+      feedEnd.classList.remove('hidden');
+    } else if (state === 'end') {
+      feedEnd.textContent = "You've reached the end.";
+      feedEnd.classList.remove('hidden');
+    } else {
+      feedEnd.classList.add('hidden');
+    }
+  }
+
   async function getJson(url) {
     const res = await fetch(url);
     const data = await res.json().catch(() => ({}));
@@ -55,7 +77,7 @@
     return data;
   }
 
-  // --- config + trending front page ---------------------------------------
+  // --- config + first load -------------------------------------------------
   async function init() {
     try {
       const cfg = await getJson('/api/config');
@@ -67,21 +89,94 @@
     } catch (_) {
       /* non-fatal */
     }
-    loadTrending();
+    resetFeed('trending', '');
   }
 
-  async function loadTrending() {
-    sectionTitle.textContent = '🔥 Trending this week';
-    setStatus('<span class="spinner"></span> Loading…');
-    try {
-      const data = await getJson('/api/trending');
-      lastResults = data.results || [];
-      renderGrid(lastResults, 'No trending titles right now.');
-      setStatus('');
-    } catch (err) {
-      setStatus('❌ ' + escapeHtml(err.message), true);
-    }
+  // --- infinite-scroll feed ------------------------------------------------
+  function resetFeed(newMode, newQuery) {
+    mode = newMode;
+    query = newQuery || '';
+    page = 0;
+    totalPages = 1;
+    done = false;
+    loading = false;
+    seen.clear();
+    resultsEl.innerHTML = '';
+    showFeedEnd('hidden');
+    sectionTitle.textContent = mode === 'search' ? `Results for “${query}”` : '🔥 Trending this week';
+    window.scrollTo({ top: 0 });
+    loadMore();
   }
+
+  function loadMore() {
+    if (loading || done) return;
+    loading = true;
+    const next = page + 1;
+    if (next === 1) setStatus('<span class="spinner"></span> Loading…');
+    else showFeedEnd('loading');
+
+    const url = mode === 'search'
+      ? '/api/search?q=' + encodeURIComponent(query) + '&page=' + next
+      : '/api/trending?page=' + next;
+
+    getJson(url).then((data) => {
+      const results = data.results || [];
+      page = data.page || next;
+      totalPages = data.totalPages || page;
+
+      if (mode === 'search' && next === 1) {
+        lastResults = results;
+        showSuggestions(results);
+      }
+
+      const added = appendCards(results);
+
+      if (next === 1) {
+        setStatus(mode === 'search' && !added ? 'No results found.' : '');
+      }
+      if (page >= totalPages || (results.length === 0 && next > 1)) done = true;
+
+      loading = false;
+      showFeedEnd(done && seen.size ? 'end' : 'hidden');
+
+      // Keep filling until the viewport is covered (or we're done).
+      if (!done && nearBottom()) loadMore();
+    }).catch((err) => {
+      loading = false;
+      done = true; // stop hammering on error
+      if (next === 1) setStatus('❌ ' + escapeHtml(err.message), true);
+      showFeedEnd('hidden');
+    });
+  }
+
+  function appendCards(results) {
+    let added = 0;
+    for (const item of results) {
+      const key = item.mediaType + ':' + item.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      resultsEl.appendChild(makeCard(item));
+      added++;
+    }
+    return added;
+  }
+
+  // Are we within ~900px of the bottom of the page?
+  function nearBottom() {
+    const doc = document.documentElement;
+    return (doc.scrollHeight - window.scrollY - window.innerHeight) < 900;
+  }
+
+  // Trigger more loads on scroll/resize (time-throttled, no rAF dependency).
+  let lastCheck = 0;
+  function onScrollOrResize() {
+    const now = Date.now();
+    if (now - lastCheck < 120) return;
+    lastCheck = now;
+    if (!loading && !done && nearBottom()) loadMore();
+  }
+  window.addEventListener('scroll', onScrollOrResize, { passive: true });
+  window.addEventListener('resize', onScrollOrResize);
 
   // --- search --------------------------------------------------------------
   let debounceTimer;
@@ -90,10 +185,10 @@
     const q = searchInput.value.trim();
     if (!q) {
       hideSuggestions();
-      loadTrending();
+      resetFeed('trending', '');
       return;
     }
-    debounceTimer = setTimeout(doSearch, 300);
+    debounceTimer = setTimeout(() => resetFeed('search', q), 300);
   });
 
   searchInput.addEventListener('focus', () => {
@@ -116,29 +211,14 @@
         openItem(lastResults[activeSuggestion]);
         hideSuggestions();
       } else {
-        doSearch();
+        const q = searchInput.value.trim();
+        if (q) resetFeed('search', q);
         hideSuggestions();
       }
     } else if (e.key === 'Escape') {
       hideSuggestions();
     }
   });
-
-  async function doSearch() {
-    const q = searchInput.value.trim();
-    if (!q) return;
-    setStatus('<span class="spinner"></span> Searching…');
-    try {
-      const data = await getJson('/api/search?q=' + encodeURIComponent(q));
-      lastResults = data.results || [];
-      sectionTitle.textContent = `Results for “${q}”`;
-      showSuggestions(lastResults);
-      renderGrid(lastResults, 'No results found.');
-      setStatus(lastResults.length ? `${lastResults.length} result${lastResults.length === 1 ? '' : 's'}` : '');
-    } catch (err) {
-      setStatus('❌ ' + escapeHtml(err.message), true);
-    }
-  }
 
   // --- suggestions dropdown ------------------------------------------------
   function showSuggestions(results) {
@@ -185,48 +265,39 @@
     if (items[activeSuggestion]) items[activeSuggestion].scrollIntoView({ block: 'nearest' });
   }
 
-  // Hide dropdown when clicking outside the search area.
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-wrap')) hideSuggestions();
   });
 
-  // --- results grid --------------------------------------------------------
-  function renderGrid(results, emptyMsg) {
-    if (!results.length) {
-      resultsEl.innerHTML = '';
-      setStatus(emptyMsg || 'Nothing to show.');
-      return;
-    }
-    resultsEl.innerHTML = '';
-    for (const item of results) {
-      const card = document.createElement('article');
-      card.className = 'card';
-      card.tabIndex = 0;
-      card.setAttribute('role', 'button');
+  // --- card ----------------------------------------------------------------
+  function makeCard(item) {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
 
-      const poster = item.poster || PLACEHOLDER;
-      const typeLabel = item.mediaType === 'tv' ? 'TV' : 'Movie';
-      const ratingHtml = item.rating ? `<span class="rating">★ ${item.rating}</span>` : '';
+    const poster = item.poster || PLACEHOLDER;
+    const typeLabel = item.mediaType === 'tv' ? 'TV' : 'Movie';
+    const ratingHtml = item.rating ? `<span class="rating">★ ${item.rating}</span>` : '';
 
-      card.innerHTML = `
-        <div class="poster">
-          <img loading="lazy" src="${poster}" alt="${escapeHtml(item.title)} poster"
-               onerror="this.src='${PLACEHOLDER}'">
-          <span class="badge ${item.mediaType}">${typeLabel}</span>
-          ${ratingHtml}
-        </div>
-        <div class="meta">
-          <div class="title">${escapeHtml(item.title)}</div>
-          <div class="year">${escapeHtml(item.year || '—')}</div>
-        </div>`;
+    card.innerHTML = `
+      <div class="poster">
+        <img loading="lazy" src="${poster}" alt="${escapeHtml(item.title)} poster"
+             onerror="this.src='${PLACEHOLDER}'">
+        <span class="badge ${item.mediaType}">${typeLabel}</span>
+        ${ratingHtml}
+      </div>
+      <div class="meta">
+        <div class="title">${escapeHtml(item.title)}</div>
+        <div class="year">${escapeHtml(item.year || '—')}</div>
+      </div>`;
 
-      const open = () => openItem(item);
-      card.addEventListener('click', open);
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
-      });
-      resultsEl.appendChild(card);
-    }
+    const open = () => openItem(item);
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
+    return card;
   }
 
   // --- opening / playback --------------------------------------------------
@@ -318,7 +389,7 @@
   }
 
   function closeModal() {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (fsElement()) exitFS();
     modal.classList.add('hidden');
     document.body.style.overflow = '';
     iframe.removeAttribute('src');
@@ -327,22 +398,50 @@
 
   closeBtn.addEventListener('click', closeModal);
 
-  // Fullscreen toggle on the player area.
+  // --- fullscreen (with vendor prefixes) -----------------------------------
+  function fsElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement ||
+           document.mozFullScreenElement || document.msFullscreenElement || null;
+  }
+  function requestFS(el) {
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen ||
+               el.mozRequestFullScreen || el.msRequestFullscreen;
+    return fn ? fn.call(el) : null;
+  }
+  function exitFS() {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen ||
+               document.mozCancelFullScreen || document.msExitFullscreen;
+    return fn ? fn.call(document) : null;
+  }
+
+  function tryFS(el) {
+    let p = null;
+    try { p = requestFS(el); } catch (_) { return false; }
+    if (p && typeof p.catch === 'function') p.catch(() => {}); // swallow rejections
+    return true;
+  }
+
   fullscreenBtn.addEventListener('click', () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      (playerFrame.requestFullscreen ? playerFrame.requestFullscreen() : Promise.reject())
-        .catch(() => {
-          // Fallback for browsers that block element fullscreen: fullscreen the iframe.
-          if (iframe.requestFullscreen) iframe.requestFullscreen().catch(() => {});
-        });
+    if (fsElement()) { exitFS(); return; }
+    // Prefer the player container; fall back to the iframe element itself.
+    let p = null;
+    try { p = requestFS(playerFrame); } catch (_) { p = null; }
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => tryFS(iframe));
+    } else if (!p) {
+      tryFS(iframe);
     }
   });
 
+  function updateFsLabel() {
+    fullscreenBtn.textContent = fsElement() ? '⤢ Exit fullscreen' : '⛶ Fullscreen';
+  }
+  document.addEventListener('fullscreenchange', updateFsLabel);
+  document.addEventListener('webkitfullscreenchange', updateFsLabel);
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-      if (!document.fullscreenElement) closeModal();
+    if (e.key === 'Escape' && !modal.classList.contains('hidden') && !fsElement()) {
+      closeModal();
     }
   });
 
