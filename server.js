@@ -89,6 +89,19 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
+// Shape a raw TMDB movie/tv record into the compact form the frontend uses.
+function mapMedia(r) {
+  return {
+    id: r.id,
+    mediaType: r.media_type,
+    title: r.title || r.name || 'Untitled',
+    year: String(r.release_date || r.first_air_date || '').slice(0, 4),
+    poster: r.poster_path ? `${IMAGE_BASE}/w342${r.poster_path}` : null,
+    overview: r.overview || '',
+    rating: r.vote_average ? Math.round(r.vote_average * 10) / 10 : null,
+  };
+}
+
 // Multi search (movies + TV shows).
 app.get('/api/search', async (req, res) => {
   if (!requireApiKey(res)) return;
@@ -100,20 +113,30 @@ app.get('/api/search', async (req, res) => {
     const data = await tmdb('/search/multi', { query: q, include_adult: 'false', page: '1' });
     const results = (data.results || [])
       .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
-      .map((r) => ({
-        id: r.id,
-        mediaType: r.media_type,
-        title: r.title || r.name || 'Untitled',
-        year: String(r.release_date || r.first_air_date || '').slice(0, 4),
-        poster: r.poster_path ? `${IMAGE_BASE}/w342${r.poster_path}` : null,
-        overview: r.overview || '',
-        rating: r.vote_average ? Math.round(r.vote_average * 10) / 10 : null,
-      }));
+      .map(mapMedia);
 
     res.json({ results });
   } catch (err) {
     console.error('search error:', err.message);
     res.status(err.status || 500).json({ error: 'Search failed.', detail: err.message });
+  }
+});
+
+// Trending this week (front page): top 20 movies & shows.
+app.get('/api/trending', async (_req, res) => {
+  if (!requireApiKey(res)) return;
+
+  try {
+    const data = await tmdb('/trending/all/week', { page: '1' });
+    const results = (data.results || [])
+      .filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path)
+      .slice(0, 20)
+      .map(mapMedia);
+
+    res.json({ results });
+  } catch (err) {
+    console.error('trending error:', err.message);
+    res.status(err.status || 500).json({ error: 'Failed to load trending.', detail: err.message });
   }
 });
 

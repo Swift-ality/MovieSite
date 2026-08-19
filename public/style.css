@@ -30,7 +30,7 @@ html, body {
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -60,7 +60,7 @@ html, body {
 .search-icon {
   position: absolute;
   left: 14px;
-  top: 50%;
+  top: 22px;
   transform: translateY(-50%);
   width: 20px;
   height: 20px;
@@ -84,12 +84,81 @@ html, body {
 }
 #search::placeholder { color: var(--muted); }
 
+/* Live preview dropdown */
+.suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  z-index: 40;
+  padding: 6px;
+}
+.suggestions.hidden { display: none; }
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.suggestion:hover,
+.suggestion.active {
+  background: var(--panel-2);
+}
+.suggestion img {
+  width: 40px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--panel-2);
+  flex-shrink: 0;
+}
+.suggestion .s-info { min-width: 0; flex: 1; }
+.suggestion .s-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suggestion .s-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.suggestion .s-type {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.suggestion .s-type.movie { background: rgba(255, 90, 60, 0.9); }
+.suggestion .s-type.tv { background: rgba(58, 120, 255, 0.9); }
+
 /* Layout */
 .container {
   max-width: 1400px;
   margin: 0 auto;
   padding: 28px clamp(16px, 4vw, 48px) 80px;
 }
+.section-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 16px;
+  letter-spacing: 0.2px;
+}
+.section-title:empty { display: none; }
 .status {
   color: var(--muted);
   min-height: 22px;
@@ -157,9 +226,7 @@ html, body {
   background: rgba(0, 0, 0, 0.6);
 }
 
-.meta {
-  padding: 10px 12px 14px;
-}
+.meta { padding: 10px 12px 14px; }
 .title {
   font-size: 14px;
   font-weight: 650;
@@ -175,102 +242,116 @@ html, body {
   font-size: 12px;
 }
 
-/* Modal */
+/* Fullscreen player modal */
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  z-index: 100;
+  background: #000;
 }
 .modal.hidden { display: none; }
-.modal-backdrop {
+.modal-inner {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(3px);
-}
-.modal-inner {
-  position: relative;
-  width: min(1100px, 100%);
+  display: flex;
+  flex-direction: column;
   background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  overflow: hidden;
 }
 .modal-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
+  gap: 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
 }
 .modal-title {
   font-weight: 700;
-  font-size: 17px;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .icon-btn {
   border: none;
   background: var(--panel-2);
   color: var(--text);
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   cursor: pointer;
   font-size: 15px;
   transition: background 0.15s;
 }
 .icon-btn:hover { background: var(--accent); }
+.text-btn {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+}
+.text-btn:hover { background: var(--panel); border-color: var(--accent); }
 
 .tv-controls {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
 }
 .tv-controls.hidden { display: none; }
 .tv-controls label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
+  gap: 4px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 600;
 }
 .tv-controls select {
-  min-width: 150px;
-  padding: 9px 12px;
-  border-radius: 9px;
+  min-width: 130px;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
 }
 .play-btn {
-  padding: 10px 20px;
+  padding: 9px 18px;
   border: none;
-  border-radius: 9px;
+  border-radius: 8px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #10121a;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: filter 0.15s, transform 0.1s;
 }
 .play-btn:hover { filter: brightness(1.08); }
 .play-btn:active { transform: scale(0.97); }
 
+/* Player fills all remaining space */
 .player-frame {
   position: relative;
-  aspect-ratio: 16 / 9;
+  flex: 1 1 auto;
+  min-height: 0;
   background: #000;
 }
 .player-frame iframe {
@@ -288,24 +369,11 @@ html, body {
   justify-content: center;
   color: var(--muted);
   font-size: 15px;
-}
-.player-note {
-  margin: 0;
-  padding: 12px 18px 16px;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-/* Footer */
-.site-footer {
   text-align: center;
-  color: var(--muted);
-  font-size: 13px;
-  padding: 24px 16px 40px;
+  padding: 20px;
 }
 
-/* Empty / loading helpers */
+/* Helpers */
 .spinner {
   display: inline-block;
   width: 16px;
@@ -323,4 +391,6 @@ html, body {
   .site-header { flex-wrap: wrap; }
   .search-wrap { max-width: none; order: 3; width: 100%; margin-left: 0; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
+  .modal-head { flex-wrap: wrap; }
+  .text-btn { padding: 0 10px; }
 }

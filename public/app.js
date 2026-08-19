@@ -6,19 +6,26 @@
 
   const $ = (sel) => document.querySelector(sel);
   const searchInput = $('#search');
+  const suggestionsEl = $('#suggestions');
   const resultsEl = $('#results');
   const statusEl = $('#status');
+  const sectionTitle = $('#section-title');
 
   const modal = $('#player-modal');
   const modalTitle = $('#modal-title');
+  const playerFrame = $('#player-frame');
   const tvControls = $('#tv-controls');
   const seasonSelect = $('#season-select');
   const episodeSelect = $('#episode-select');
   const playEpisodeBtn = $('#play-episode');
+  const fullscreenBtn = $('#fullscreen-btn');
+  const closeBtn = $('#close-modal');
   const iframe = $('#player');
   const playerLoading = $('#player-loading');
 
   let currentTvId = null;
+  let lastResults = [];
+  let activeSuggestion = -1;
 
   const PLACEHOLDER =
     'data:image/svg+xml;utf8,' +
@@ -48,16 +55,31 @@
     return data;
   }
 
-  // --- config --------------------------------------------------------------
-  async function loadConfig() {
+  // --- config + trending front page ---------------------------------------
+  async function init() {
     try {
       const cfg = await getJson('/api/config');
       if (cfg.playerBaseUrl) playerBaseUrl = cfg.playerBaseUrl;
       if (!cfg.hasApiKey) {
         setStatus('⚠️ The server has no TMDB API key configured. Set <b>TMDB_API_KEY</b> and restart.', true);
+        return;
       }
     } catch (_) {
       /* non-fatal */
+    }
+    loadTrending();
+  }
+
+  async function loadTrending() {
+    sectionTitle.textContent = '🔥 Trending this week';
+    setStatus('<span class="spinner"></span> Loading…');
+    try {
+      const data = await getJson('/api/trending');
+      lastResults = data.results || [];
+      renderGrid(lastResults, 'No trending titles right now.');
+      setStatus('');
+    } catch (err) {
+      setStatus('❌ ' + escapeHtml(err.message), true);
     }
   }
 
@@ -65,40 +87,117 @@
   let debounceTimer;
   searchInput.addEventListener('input', () => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(doSearch, 350);
+    const q = searchInput.value.trim();
+    if (!q) {
+      hideSuggestions();
+      loadTrending();
+      return;
+    }
+    debounceTimer = setTimeout(doSearch, 300);
   });
+
+  searchInput.addEventListener('focus', () => {
+    if (searchInput.value.trim() && lastResults.length) showSuggestions(lastResults);
+  });
+
   searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    const items = suggestionsEl.querySelectorAll('.suggestion');
+    if (e.key === 'ArrowDown' && items.length) {
+      e.preventDefault();
+      activeSuggestion = Math.min(activeSuggestion + 1, items.length - 1);
+      highlightSuggestion(items);
+    } else if (e.key === 'ArrowUp' && items.length) {
+      e.preventDefault();
+      activeSuggestion = Math.max(activeSuggestion - 1, 0);
+      highlightSuggestion(items);
+    } else if (e.key === 'Enter') {
       clearTimeout(debounceTimer);
-      doSearch();
+      if (activeSuggestion >= 0 && lastResults[activeSuggestion]) {
+        openItem(lastResults[activeSuggestion]);
+        hideSuggestions();
+      } else {
+        doSearch();
+        hideSuggestions();
+      }
+    } else if (e.key === 'Escape') {
+      hideSuggestions();
     }
   });
 
   async function doSearch() {
     const q = searchInput.value.trim();
-    if (!q) {
-      resultsEl.innerHTML = '';
-      setStatus('');
-      return;
-    }
+    if (!q) return;
     setStatus('<span class="spinner"></span> Searching…');
     try {
       const data = await getJson('/api/search?q=' + encodeURIComponent(q));
-      renderResults(data.results || []);
+      lastResults = data.results || [];
+      sectionTitle.textContent = `Results for “${q}”`;
+      showSuggestions(lastResults);
+      renderGrid(lastResults, 'No results found.');
+      setStatus(lastResults.length ? `${lastResults.length} result${lastResults.length === 1 ? '' : 's'}` : '');
     } catch (err) {
       setStatus('❌ ' + escapeHtml(err.message), true);
     }
   }
 
-  function renderResults(results) {
+  // --- suggestions dropdown ------------------------------------------------
+  function showSuggestions(results) {
+    activeSuggestion = -1;
+    const top = results.slice(0, 8);
+    if (!top.length) { hideSuggestions(); return; }
+
+    suggestionsEl.innerHTML = top.map((item, i) => {
+      const poster = item.poster || PLACEHOLDER;
+      const type = item.mediaType === 'tv' ? 'TV' : 'Movie';
+      const sub = [item.year, item.rating ? '★ ' + item.rating : ''].filter(Boolean).join(' · ');
+      return `
+        <div class="suggestion" role="option" data-index="${i}">
+          <img loading="lazy" src="${poster}" alt="" onerror="this.src='${PLACEHOLDER}'">
+          <div class="s-info">
+            <div class="s-title">${escapeHtml(item.title)}</div>
+            <div class="s-sub">${escapeHtml(sub || '—')}</div>
+          </div>
+          <span class="s-type ${item.mediaType}">${type}</span>
+        </div>`;
+    }).join('');
+
+    suggestionsEl.querySelectorAll('.suggestion').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.index);
+        if (lastResults[idx]) openItem(lastResults[idx]);
+        hideSuggestions();
+      });
+    });
+
+    suggestionsEl.classList.remove('hidden');
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function hideSuggestions() {
+    suggestionsEl.classList.add('hidden');
+    suggestionsEl.innerHTML = '';
+    activeSuggestion = -1;
+    searchInput.setAttribute('aria-expanded', 'false');
+  }
+
+  function highlightSuggestion(items) {
+    items.forEach((el, i) => el.classList.toggle('active', i === activeSuggestion));
+    if (items[activeSuggestion]) items[activeSuggestion].scrollIntoView({ block: 'nearest' });
+  }
+
+  // Hide dropdown when clicking outside the search area.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) hideSuggestions();
+  });
+
+  // --- results grid --------------------------------------------------------
+  function renderGrid(results, emptyMsg) {
     if (!results.length) {
       resultsEl.innerHTML = '';
-      setStatus('No results found.');
+      setStatus(emptyMsg || 'Nothing to show.');
       return;
     }
-    setStatus(`${results.length} result${results.length === 1 ? '' : 's'}`);
     resultsEl.innerHTML = '';
-
     for (const item of results) {
       const card = document.createElement('article');
       card.className = 'card';
@@ -124,10 +223,7 @@
       const open = () => openItem(item);
       card.addEventListener('click', open);
       card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          open();
-        }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
       });
       resultsEl.appendChild(card);
     }
@@ -145,7 +241,7 @@
       currentTvId = item.id;
       tvControls.classList.remove('hidden');
       openModal();
-      setIframe(''); // wait until a season/episode is chosen
+      setIframe('');
       loadSeasons(item.id);
     }
   }
@@ -156,22 +252,16 @@
     try {
       const data = await getJson('/api/tv/' + encodeURIComponent(id));
       const seasons = (data.seasons || []).filter((s) => s.episodeCount > 0);
-      if (!seasons.length) {
-        seasonSelect.innerHTML = '<option>No seasons</option>';
-        return;
-      }
+      if (!seasons.length) { seasonSelect.innerHTML = '<option>No seasons</option>'; return; }
       seasonSelect.innerHTML = seasons
         .map((s) => `<option value="${s.seasonNumber}">${escapeHtml(s.name)}</option>`)
         .join('');
-
-      // Prefer the first "real" season (skip specials / season 0) when possible.
       const firstReal = seasons.find((s) => s.seasonNumber >= 1) || seasons[0];
       seasonSelect.value = String(firstReal.seasonNumber);
-
       await loadEpisodes(id, firstReal.seasonNumber, true);
     } catch (err) {
       seasonSelect.innerHTML = '<option>Error</option>';
-      setStatus('❌ ' + escapeHtml(err.message), true);
+      playerLoading.textContent = err.message;
     }
   }
 
@@ -180,10 +270,7 @@
     try {
       const data = await getJson(`/api/tv/${encodeURIComponent(id)}/season/${encodeURIComponent(season)}`);
       const eps = data.episodes || [];
-      if (!eps.length) {
-        episodeSelect.innerHTML = '<option>No episodes</option>';
-        return;
-      }
+      if (!eps.length) { episodeSelect.innerHTML = '<option>No episodes</option>'; return; }
       episodeSelect.innerHTML = eps
         .map((e) => `<option value="${e.episodeNumber}">E${e.episodeNumber} · ${escapeHtml(e.name)}</option>`)
         .join('');
@@ -191,7 +278,6 @@
       if (autoplayFirst) playCurrentEpisode();
     } catch (err) {
       episodeSelect.innerHTML = '<option>Error</option>';
-      setStatus('❌ ' + escapeHtml(err.message), true);
     }
   }
 
@@ -228,22 +314,38 @@
   function openModal() {
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
+    hideSuggestions();
   }
 
   function closeModal() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     modal.classList.add('hidden');
     document.body.style.overflow = '';
-    iframe.removeAttribute('src'); // stop playback
+    iframe.removeAttribute('src');
     currentTvId = null;
   }
 
-  modal.addEventListener('click', (e) => {
-    if (e.target.hasAttribute('data-close')) closeModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
+  closeBtn.addEventListener('click', closeModal);
+
+  // Fullscreen toggle on the player area.
+  fullscreenBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      (playerFrame.requestFullscreen ? playerFrame.requestFullscreen() : Promise.reject())
+        .catch(() => {
+          // Fallback for browsers that block element fullscreen: fullscreen the iframe.
+          if (iframe.requestFullscreen) iframe.requestFullscreen().catch(() => {});
+        });
+    }
   });
 
-  // --- init ----------------------------------------------------------------
-  loadConfig();
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      if (!document.fullscreenElement) closeModal();
+    }
+  });
+
+  // --- go ------------------------------------------------------------------
+  init();
 })();
