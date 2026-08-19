@@ -1,10 +1,14 @@
-# 🎬 StreamSearch
+# 🎬 SwiftWatchesMovies
 
-A small self-hosted web app that lets you **search movies & TV shows** (powered by
-[TheMovieDB](https://www.themoviedb.org/)) and **stream them** through embeddable
-players. The front page infinitely scrolls trending titles; the search bar shows live
-poster previews; the player is full-screen capable and lets viewers **switch between
-several streaming sources**.
+A small self-hosted web app for browsing and streaming **Movies & TV** (via
+[TheMovieDB](https://www.themoviedb.org/)) and **Anime** (via [AniList](https://anilist.co/)).
+Switch between the **Movies** and **Anime** sections from the top tabs; each has its own
+**genre sidebar**. The front page infinitely scrolls trending titles, the search bar shows
+live poster previews, and the player is full-screen capable.
+
+- **Movies/TV** play through a switchable set of embed sources (see below), by TMDB ID.
+- **Anime** plays through [VidEasy's](https://www.videasy.to/) AniList endpoints
+  (`player.videasy.net/anime/{id}` for films, `…/anime/{id}/{episode}` for series; sub + dub).
 
 Sources you can switch between in the player:
 
@@ -136,11 +140,19 @@ panels (e.g. Calagopus/BusyBox `ash`) can't reliably `eval` a multi-statement
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/config` | Player base URL + whether an API key is set. |
-| GET | `/api/search?q=` | Multi search (movies + TV). |
-| GET | `/api/tv/:id` | Season list for a show. |
-| GET | `/api/tv/:id/season/:n` | Episodes for a season. |
+| GET | `/api/config` | Sources, default source, anime source, API-key flag. |
+| GET | `/api/search?q=&page=` | Movie/TV multi search (paginated). |
+| GET | `/api/trending?page=` | Trending movies & TV (front page). |
+| GET | `/api/genres/movie` | Movie genre list (sidebar). |
+| GET | `/api/discover?genre=&page=` | Movies by genre (paginated). |
+| GET | `/api/tv/:id` · `/api/tv/:id/season/:n` | Seasons / episodes for a show. |
+| GET | `/api/anime/genres` | Anime genre list (AniList). |
+| GET | `/api/anime/browse?genre=&page=` | Trending / genre anime (AniList, cached). |
+| GET | `/api/anime/search?q=&page=` | Anime search (AniList, cached). |
 | GET | `/healthz` | Health check. |
+
+Anime data comes from AniList (no key needed) and is cached in-memory for a few minutes
+to stay under AniList's rate limit.
 
 ---
 

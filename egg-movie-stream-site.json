@@ -5,9 +5,9 @@
         "update_url": null
     },
     "exported_at": "2026-08-19T00:00:00+00:00",
-    "name": "Movie & TV Stream Search Site",
+    "name": "SwiftWatchesMovies",
     "author": "pvmook@planet.nl",
-    "description": "A Node.js web app that searches TheMovieDB for movies & TV shows and streams them through an embeddable player (111movies.net by default). Serves a search UI on the allocated port.",
+    "description": "A Node.js web app to browse & stream Movies/TV (TheMovieDB) and Anime (AniList), with genre sidebars and switchable embed sources (111Movies, VidFast, VidSrc, CineSrc, VidEasy). Serves the UI on the allocated port.",
     "features": null,
     "docker_images": {
         "Node.js 20": "ghcr.io/pterodactyl/yolks:nodejs_20",

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StreamSearch</title>
+  <title>SwiftWatchesMovies</title>
   <link rel="stylesheet" href="/style.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" />
 </head>
@@ -11,25 +11,37 @@
   <header class="site-header">
     <div class="brand">
       <span class="brand-logo">🎬</span>
-      <span class="brand-name">Stream<span>Search</span></span>
+      <span class="brand-name">Swift<span>Watches</span>Movies</span>
     </div>
+
+    <nav class="mode-tabs" id="mode-tabs" aria-label="Content type">
+      <button class="mode-tab active" data-mode="movies">Movies</button>
+      <button class="mode-tab" data-mode="anime">Anime</button>
+    </nav>
+
     <div class="search-wrap">
       <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      <input id="search" type="search" placeholder="Search movies & TV shows…" autocomplete="off" autofocus
+      <input id="search" type="search" placeholder="Search…" autocomplete="off"
              role="combobox" aria-expanded="false" aria-controls="suggestions" aria-autocomplete="list" />
-      <!-- Live preview dropdown -->
       <div id="suggestions" class="suggestions hidden" role="listbox"></div>
     </div>
   </header>
 
-  <main class="container">
-    <h2 id="section-title" class="section-title"></h2>
-    <div id="status" class="status"></div>
-    <div id="results" class="grid" aria-live="polite"></div>
-    <div id="feed-end" class="feed-end hidden">You've reached the end.</div>
-  </main>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-title">Genres</div>
+      <nav id="genre-list" class="genre-list" aria-label="Genres"></nav>
+    </aside>
+
+    <main class="container">
+      <h2 id="section-title" class="section-title"></h2>
+      <div id="status" class="status"></div>
+      <div id="results" class="grid" aria-live="polite"></div>
+      <div id="feed-end" class="feed-end hidden">You've reached the end.</div>
+    </main>
+  </div>
 
   <!-- Fullscreen player modal -->
   <div id="player-modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -38,17 +50,17 @@
         <div class="modal-title" id="modal-title"></div>
 
         <div id="tv-controls" class="tv-controls hidden">
-          <label>Season
+          <label id="season-wrap">Season
             <select id="season-select"></select>
           </label>
-          <label>Episode
+          <label id="episode-wrap">Episode
             <select id="episode-select"></select>
           </label>
           <button id="play-episode" class="play-btn">▶ Play</button>
         </div>
 
         <div class="head-actions">
-          <label class="source-picker">Server
+          <label class="source-picker" id="source-picker">Server
             <select id="source-select" title="Switch streaming source"></select>
           </label>
           <button class="text-btn" id="fullscreen-btn" title="Toggle fullscreen">⛶ Fullscreen</button>
