@@ -23,10 +23,17 @@
   const playEpisodeBtn = $('#play-episode');
   const sourcePicker = $('#source-picker');
   const sourceSelect = $('#source-select');
+  const adblockBtn = $('#adblock-btn');
   const fullscreenBtn = $('#fullscreen-btn');
   const closeBtn = $('#close-modal');
   const iframe = $('#player');
   const playerLoading = $('#player-loading');
+
+  // When on, the player iframe is sandboxed WITHOUT allow-popups /
+  // allow-top-navigation, which blocks pop-up and page-redirect ads. Some
+  // providers refuse to play when sandboxed, so it can be toggled off.
+  const SANDBOX_TOKENS = 'allow-scripts allow-same-origin allow-presentation';
+  let blockAds = true;
 
   // Sources (movies) + anime source, from /api/config.
   let sources = [];
@@ -101,11 +108,14 @@
       sources.forEach((s) => { sourceById[s.id] = s; });
       animeSource = cfg.animeSource || null;
 
-      let savedSource = null, savedMode = null;
+      let savedSource = null, savedMode = null, savedAdblock = null;
       try {
         savedSource = localStorage.getItem('ss_source');
         savedMode = localStorage.getItem('ss_mode');
+        savedAdblock = localStorage.getItem('ss_adblock');
       } catch (_) { /* ignore */ }
+      blockAds = savedAdblock !== '0';   // default on
+      updateAdblockLabel();
       currentSourceId = (savedSource && sourceById[savedSource])
         ? savedSource
         : (cfg.defaultSource && sourceById[cfg.defaultSource] ? cfg.defaultSource : (sources[0] && sources[0].id));
@@ -532,6 +542,10 @@
   });
 
   // --- modal ---------------------------------------------------------------
+  function applySandbox() {
+    if (blockAds) iframe.setAttribute('sandbox', SANDBOX_TOKENS);
+    else iframe.removeAttribute('sandbox');
+  }
   function setIframe(src) {
     if (!src) {
       iframe.removeAttribute('src');
@@ -539,10 +553,24 @@
       playerLoading.textContent = 'Select an episode, then press Play.';
       return;
     }
+    applySandbox();               // must be set before navigation to take effect
     playerLoading.style.display = 'flex';
     playerLoading.textContent = 'Loading player…';
     iframe.src = src;
   }
+
+  function updateAdblockLabel() {
+    if (!adblockBtn) return;
+    adblockBtn.textContent = blockAds ? '🛡 Ad-block: On' : '🛡 Ad-block: Off';
+    adblockBtn.classList.toggle('on', blockAds);
+  }
+  adblockBtn.addEventListener('click', () => {
+    blockAds = !blockAds;
+    try { localStorage.setItem('ss_adblock', blockAds ? '1' : '0'); } catch (_) { /* ignore */ }
+    updateAdblockLabel();
+    // reload the current title so the new sandbox setting takes effect
+    if (currentMedia) { iframe.removeAttribute('src'); playCurrent(); }
+  });
   iframe.addEventListener('load', () => {
     if (iframe.getAttribute('src')) playerLoading.style.display = 'none';
   });
