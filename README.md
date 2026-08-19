@@ -104,6 +104,7 @@ The egg marks the server as "started" when it prints `listening on`.
 ```
 movie-stream-site/
 ├── server.js                     # Express server + TMDB proxy
+├── start.sh                      # Runtime launcher used by the egg startup command
 ├── package.json
 ├── .env.example
 ├── egg-movie-stream-site.json    # Pterodactyl egg
@@ -112,6 +113,12 @@ movie-stream-site/
     ├── style.css
     └── app.js                    # search, cards, player modal
 ```
+
+The egg's startup command is just `sh /home/container/start.sh`. All boot logic
+(optional `git pull`, `npm install` if `node_modules` is missing, then `exec node`)
+lives in [`start.sh`](start.sh) rather than in the panel's startup string — some
+panels (e.g. Calagopus/BusyBox `ash`) can't reliably `eval` a multi-statement
+`if…then…fi` startup string, but they run a script file fine.
 
 ## API endpoints (internal)
 
@@ -132,3 +139,17 @@ movie-stream-site/
   for how you use it in your jurisdiction.
 - If a player fails to load, the embed service may be down or may block iframe embedding
   for that title; try another title.
+
+## Troubleshooting (Pterodactyl / Calagopus)
+
+- **`syntax error: unexpected "then"` on startup** — the panel is `eval`-ing a
+  multi-statement startup string under BusyBox `ash`. This egg avoids that by using
+  `sh /home/container/start.sh` as the startup command. Make sure your server's
+  **Startup** command is exactly that (reset it to the egg default if needed).
+- **`exec /bin/bash: exec format error` during install** — the install image had no
+  build for your CPU (common on ARM, e.g. Oracle Ampere). This egg installs with
+  `ghcr.io/pterodactyl/yolks:nodejs_20`, which is multi-arch (amd64 + arm64).
+- **`Cannot find module 'express'` / missing `server.js`** — the code was never pulled.
+  **Reinstall** the server so the install step clones the repo, then start.
+- After changing the egg, existing servers keep their old settings — **update the
+  server's Startup command and Reinstall** for the changes to take effect.

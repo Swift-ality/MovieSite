@@ -15,7 +15,7 @@
         "Node.js 18": "ghcr.io/pterodactyl/yolks:nodejs_18"
     },
     "file_denylist": [],
-    "startup": "if [ -d .git ] && [ \"{{AUTO_UPDATE}}\" = \"1\" ]; then echo 'Updating from git...'; git pull; fi; if [ -f /home/container/package.json ]; then echo 'Installing dependencies...'; npm install --omit=dev --no-audit --no-fund; fi; echo 'Starting server...'; node /home/container/{{MAIN_FILE}}",
+    "startup": "sh /home/container/start.sh",
     "config": {
         "files": "{}",
         "startup": "{\r\n    \"done\": \"listening on\"\r\n}",
