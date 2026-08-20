@@ -7,8 +7,10 @@ Switch between the **Movies** and **Anime** sections from the top tabs; each has
 live poster previews, and the player is full-screen capable.
 
 - **Movies/TV** play through a switchable set of embed sources (see below), by TMDB ID.
-- **Anime** plays through [VidEasy's](https://www.videasy.to/) AniList endpoints
-  (`player.videasy.net/anime/{id}` for films, `…/anime/{id}/{episode}` for series; sub + dub).
+- **Anime** plays through its own switchable sources by AniList ID — **VidPlus**
+  (`player.vidplus.to/embed/anime/{id}/{ep}`), **VidEasy** (`player.videasy.net/anime/{id}/{ep}`),
+  and **MegaPlay** (`megaplay.buzz/stream/ani/{id}/{ep}/sub`). Each mode remembers its own source,
+  so if one provider is down you can switch in the player.
 
 Sources you can switch between in the player:
 

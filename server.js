@@ -78,15 +78,32 @@ const DEFAULT_SOURCE = SOURCES.some((s) => s.id === process.env.DEFAULT_SOURCE)
   ? process.env.DEFAULT_SOURCE
   : SOURCES[0].id;
 
-// Anime is streamed via VidEasy's AniList-based endpoints (sub + dub, auto).
-// Use the exact documented forms — the /anime/ endpoint takes no extra query
-// params (the nextEpisode/autoplayNextEpisode params are for /tv/ only and make
-// the anime player hang).
-const ANIME_SOURCE = {
-  name: 'VidEasy',
-  movie: 'https://player.videasy.net/anime/{id}',
-  show: 'https://player.videasy.net/anime/{id}/{episode}',
-};
+// Anime sources the viewer can switch between. All take AniList IDs (which is
+// what the AniList browse/search below returns). {id} = AniList id, {episode} =
+// episode number (anime films use episode 1).
+const ANIME_SOURCES = [
+  {
+    id: 'vidplus',
+    name: 'VidPlus',
+    movie: 'https://player.vidplus.to/embed/anime/{id}/1',
+    show: 'https://player.vidplus.to/embed/anime/{id}/{episode}',
+  },
+  {
+    id: 'videasy',
+    name: 'VidEasy',
+    movie: 'https://player.videasy.net/anime/{id}',
+    show: 'https://player.videasy.net/anime/{id}/{episode}',
+  },
+  {
+    id: 'megaplay',
+    name: 'MegaPlay',
+    movie: 'https://megaplay.buzz/stream/ani/{id}/1/sub',
+    show: 'https://megaplay.buzz/stream/ani/{id}/{episode}/sub',
+  },
+];
+const DEFAULT_ANIME_SOURCE = ANIME_SOURCES.some((s) => s.id === process.env.DEFAULT_ANIME_SOURCE)
+  ? process.env.DEFAULT_ANIME_SOURCE
+  : ANIME_SOURCES[0].id;
 
 // Genres shown in the Anime sidebar (AniList genre names).
 const ANIME_GENRES = [
@@ -144,7 +161,8 @@ app.get('/api/config', (_req, res) => {
   res.json({
     sources: SOURCES,
     defaultSource: DEFAULT_SOURCE,
-    animeSource: ANIME_SOURCE,
+    animeSources: ANIME_SOURCES,
+    defaultAnimeSource: DEFAULT_ANIME_SOURCE,
     hasApiKey: Boolean(TMDB_API_KEY),
   });
 });

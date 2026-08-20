@@ -52,12 +52,22 @@
         },
         {
             "name": "Default Source",
-            "description": "Which streaming source is selected first: 111movies, vidfast, vidsrc, cinesrc, or videasy. Viewers can switch per-title in the player.",
+            "description": "Which movie/TV source is selected first: 111movies, vidfast, vidsrc, cinesrc, or videasy. Viewers can switch per-title in the player.",
             "env_variable": "DEFAULT_SOURCE",
             "default_value": "111movies",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|in:111movies,vidfast,vidsrc,cinesrc,videasy",
+            "field_type": "text"
+        },
+        {
+            "name": "Default Anime Source",
+            "description": "Which anime source is selected first: vidplus, videasy, or megaplay. Viewers can switch per-title in the player.",
+            "env_variable": "DEFAULT_ANIME_SOURCE",
+            "default_value": "vidplus",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:vidplus,videasy,megaplay",
             "field_type": "text"
         },
         {

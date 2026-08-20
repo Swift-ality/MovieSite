@@ -28,11 +28,11 @@
   const iframe = $('#player');
   const playerLoading = $('#player-loading');
 
-  // Sources (movies) + anime source, from /api/config.
-  let sources = [];
-  const sourceById = {};
-  let currentSourceId = null;
-  let animeSource = null;
+  // Streaming sources per content type, from /api/config.
+  const SRC = {
+    movies: { list: [], byId: {}, current: null },
+    anime: { list: [], byId: {}, current: null },
+  };
   let currentMedia = null;   // { id, kind }  kind: movie | tv | anime-movie | anime-show
   let currentTvId = null;
 
@@ -97,19 +97,21 @@
   async function init() {
     try {
       const cfg = await getJson('/api/config');
-      sources = cfg.sources || [];
-      sources.forEach((s) => { sourceById[s.id] = s; });
-      animeSource = cfg.animeSource || null;
+      SRC.movies.list = cfg.sources || [];
+      SRC.movies.list.forEach((s) => { SRC.movies.byId[s.id] = s; });
+      SRC.anime.list = cfg.animeSources || [];
+      SRC.anime.list.forEach((s) => { SRC.anime.byId[s.id] = s; });
 
-      let savedSource = null, savedMode = null;
+      let savedMovieSrc = null, savedAnimeSrc = null, savedMode = null;
       try {
-        savedSource = localStorage.getItem('ss_source');
+        savedMovieSrc = localStorage.getItem('ss_source');
+        savedAnimeSrc = localStorage.getItem('ss_anime_source');
         savedMode = localStorage.getItem('ss_mode');
       } catch (_) { /* ignore */ }
-      currentSourceId = (savedSource && sourceById[savedSource])
-        ? savedSource
-        : (cfg.defaultSource && sourceById[cfg.defaultSource] ? cfg.defaultSource : (sources[0] && sources[0].id));
-      buildSourceSelect();
+      SRC.movies.current = (savedMovieSrc && SRC.movies.byId[savedMovieSrc]) ? savedMovieSrc
+        : (SRC.movies.byId[cfg.defaultSource] ? cfg.defaultSource : (SRC.movies.list[0] && SRC.movies.list[0].id));
+      SRC.anime.current = (savedAnimeSrc && SRC.anime.byId[savedAnimeSrc]) ? savedAnimeSrc
+        : (SRC.anime.byId[cfg.defaultAnimeSource] ? cfg.defaultAnimeSource : (SRC.anime.list[0] && SRC.anime.list[0].id));
 
       if (!cfg.hasApiKey) {
         setStatus('⚠️ The server has no TMDB API key configured. Set <b>TMDB_API_KEY</b> and restart.', true);
@@ -121,12 +123,15 @@
     setMode(contentType, true);
   }
 
-  function buildSourceSelect() {
-    if (!sources.length) return;
-    sourceSelect.innerHTML = sources
-      .map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`)
+  // Fill the Server dropdown with the current mode's sources.
+  function populateSourceSelect() {
+    const s = SRC[contentType];
+    if (!s.list.length) { sourcePicker.classList.add('hidden'); return; }
+    sourcePicker.classList.remove('hidden');
+    sourceSelect.innerHTML = s.list
+      .map((x) => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`)
       .join('');
-    sourceSelect.value = currentSourceId;
+    sourceSelect.value = s.current;
   }
 
   // --- mode (Movies / Anime) ----------------------------------------------
@@ -144,6 +149,7 @@
     browseGenre = null;
     feedKind = 'default';
 
+    populateSourceSelect();
     loadGenres(mode);
     resetFeed();
   }
@@ -418,7 +424,6 @@
       const isMovie = item.format === 'MOVIE' || item.format === 'MUSIC';
       currentMedia = { id: item.id, kind: isMovie ? 'anime-movie' : 'anime-show' };
       currentTvId = null;
-      sourcePicker.classList.add('hidden');       // anime streams via VidEasy only
       if (isMovie) {
         tvControls.classList.add('hidden');
         openModal();
@@ -436,7 +441,6 @@
     }
 
     // Movies / TV via TMDB
-    sourcePicker.classList.remove('hidden');
     seasonWrap.classList.remove('hidden');
     if (item.mediaType === 'movie') {
       currentMedia = { id: item.id, kind: 'movie' };
@@ -465,20 +469,20 @@
   function playCurrent() {
     if (!currentMedia) return;
     const k = currentMedia.kind;
+    const ms = SRC.movies.byId[SRC.movies.current] || SRC.movies.list[0];
+    const as = SRC.anime.byId[SRC.anime.current] || SRC.anime.list[0];
     if (k === 'movie') {
-      const s = sourceById[currentSourceId] || sources[0];
-      if (s) setIframe(buildUrl(s.movie, { id: currentMedia.id }));
+      if (ms) setIframe(buildUrl(ms.movie, { id: currentMedia.id }));
     } else if (k === 'tv') {
-      const s = sourceById[currentSourceId] || sources[0];
       const season = seasonSelect.value, episode = episodeSelect.value;
-      if (s && season && episode && !Number.isNaN(Number(season)) && !Number.isNaN(Number(episode))) {
-        setIframe(buildUrl(s.tv, { id: currentMedia.id, season, episode }));
+      if (ms && season && episode && !Number.isNaN(Number(season)) && !Number.isNaN(Number(episode))) {
+        setIframe(buildUrl(ms.tv, { id: currentMedia.id, season, episode }));
       }
     } else if (k === 'anime-movie') {
-      if (animeSource) setIframe(buildUrl(animeSource.movie, { id: currentMedia.id }));
+      if (as) setIframe(buildUrl(as.movie, { id: currentMedia.id }));
     } else if (k === 'anime-show') {
       const episode = episodeSelect.value;
-      if (animeSource && episode) setIframe(buildUrl(animeSource.show, { id: currentMedia.id, episode }));
+      if (as && episode) setIframe(buildUrl(as.show, { id: currentMedia.id, episode }));
     }
   }
 
@@ -526,8 +530,13 @@
   playEpisodeBtn.addEventListener('click', playCurrent);
 
   sourceSelect.addEventListener('change', () => {
-    currentSourceId = sourceSelect.value;
-    try { localStorage.setItem('ss_source', currentSourceId); } catch (_) { /* ignore */ }
+    const s = SRC[contentType];
+    s.current = sourceSelect.value;
+    try {
+      localStorage.setItem(contentType === 'anime' ? 'ss_anime_source' : 'ss_source', s.current);
+    } catch (_) { /* ignore */ }
+    // reload so the new source (which may be sandbox-sensitive) reinitializes cleanly
+    iframe.removeAttribute('src');
     playCurrent();
   });
 
