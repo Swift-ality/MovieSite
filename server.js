@@ -52,6 +52,7 @@ const SOURCES = [
     name: 'VidFast',
     movie: 'https://vidfast.vc/movie/{id}?autoPlay=true',
     tv: 'https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true&nextButton=true&autoNext=true',
+    startParam: 'startAt', // documented: start time in seconds
   },
   {
     id: 'vidsrc',
@@ -64,12 +65,14 @@ const SOURCES = [
     name: 'CineSrc',
     movie: 'https://cinesrc.st/embed/movie/{id}',
     tv: 'https://cinesrc.st/embed/tv/{id}?s={season}&e={episode}',
+    startParam: 't', // documented: start time in seconds (shows Continue/Restart prompt)
   },
   {
     id: 'videasy',
     name: 'VidEasy',
     movie: 'https://player.videasy.net/movie/{id}',
     tv: 'https://player.videasy.net/tv/{id}/{season}/{episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=true',
+    startParam: 'progress', // documented: start time in seconds
   },
 ];
 
@@ -118,7 +121,8 @@ if (!TMDB_API_KEY) {
 
 // --- TMDB helper -----------------------------------------------------------
 // Supports both a v3 API key (query param) and a v4 read access token (Bearer).
-async function tmdb(endpoint, params = {}) {
+// `signal` (optional) aborts the upstream call when the browser gives up.
+async function tmdb(endpoint, params = {}, signal) {
   const url = new URL(TMDB_BASE + endpoint);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, String(v));
@@ -132,7 +136,7 @@ async function tmdb(endpoint, params = {}) {
     url.searchParams.set('api_key', TMDB_API_KEY);
   }
 
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers, signal });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const err = new Error(`TMDB request failed (${res.status})`);
@@ -149,6 +153,15 @@ function requireApiKey(res) {
     return false;
   }
   return true;
+}
+
+// An AbortSignal that fires if the browser drops this request before we answer
+// (e.g. the frontend cancelled a stale search because the user kept typing).
+// Uses res 'close' + writableFinished; req 'close' fires too early on modern Node.
+function clientAbortSignal(res) {
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) ac.abort(); });
+  return ac.signal;
 }
 
 // --- Static frontend -------------------------------------------------------
@@ -190,11 +203,12 @@ function mapMedia(r) {
 // --- AniList (anime) -------------------------------------------------------
 const ANILIST_URL = 'https://graphql.anilist.co';
 
-async function anilist(query, variables) {
+async function anilist(query, variables, signal) {
   const res = await fetch(ANILIST_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({ query, variables }),
+    signal,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.errors) {
@@ -239,8 +253,8 @@ query ($page: Int, $genre: String, $search: String, $sort: [MediaSort]) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Run one AniList page query and normalize it.
-async function animePage(vars) {
-  const data = await anilist(ANIME_PAGE_QUERY, vars);
+async function animePage(vars, signal) {
+  const data = await anilist(ANIME_PAGE_QUERY, vars, signal);
   const p = (data && data.Page) || {};
   return {
     results: (p.media || []).filter((m) => m.coverImage).map(mapAnime),
@@ -271,15 +285,22 @@ app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.json({ results: [], page: 1, totalPages: 0 });
   const page = clampPage(req.query.page);
+  const key = `search:${q.toLowerCase()}:${page}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
 
+  const signal = clientAbortSignal(res);
   try {
-    const data = await tmdb('/search/multi', { query: q, include_adult: 'false', page: String(page) });
+    const data = await tmdb('/search/multi', { query: q, include_adult: 'false', page: String(page) }, signal);
     const results = (data.results || [])
       .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
       .map(mapMedia);
 
-    res.json({ results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) });
+    const payload = { results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) };
+    cacheSet(key, payload, 5 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
+    if (signal.aborted) return;             // browser cancelled this (stale) search
     console.error('search error:', err.message);
     res.status(err.status || 500).json({ error: 'Search failed.', detail: err.message });
   }
@@ -290,6 +311,9 @@ app.get('/api/trending', async (req, res) => {
   if (!requireApiKey(res)) return;
 
   const page = clampPage(req.query.page);
+  const key = `trending:${page}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
 
   try {
     const data = await tmdb('/trending/all/week', { page: String(page) });
@@ -297,7 +321,9 @@ app.get('/api/trending', async (req, res) => {
       .filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path)
       .map(mapMedia);
 
-    res.json({ results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) });
+    const payload = { results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) };
+    cacheSet(key, payload, 10 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     console.error('trending error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load trending.', detail: err.message });
@@ -307,9 +333,13 @@ app.get('/api/trending', async (req, res) => {
 // Movie genre list for the sidebar.
 app.get('/api/genres/movie', async (_req, res) => {
   if (!requireApiKey(res)) return;
+  const hit = cacheGet('genres:movie');
+  if (hit) return res.json(hit);
   try {
     const data = await tmdb('/genre/movie/list');
-    res.json({ genres: (data.genres || []).map((g) => ({ id: g.id, name: g.name })) });
+    const payload = { genres: (data.genres || []).map((g) => ({ id: g.id, name: g.name })) };
+    cacheSet('genres:movie', payload, 6 * 60 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     console.error('genres error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load genres.', detail: err.message });
@@ -321,6 +351,9 @@ app.get('/api/discover', async (req, res) => {
   if (!requireApiKey(res)) return;
   const page = clampPage(req.query.page);
   const genre = String(req.query.genre || '').replace(/[^0-9,]/g, '');
+  const key = `discover:${genre}:${page}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
   try {
     const data = await tmdb('/discover/movie', {
       with_genres: genre,
@@ -332,7 +365,9 @@ app.get('/api/discover', async (req, res) => {
     const results = (data.results || [])
       .filter((r) => r.poster_path)
       .map((r) => mapMedia({ ...r, media_type: 'movie' }));
-    res.json({ results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) });
+    const payload = { results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) };
+    cacheSet(key, payload, 10 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     console.error('discover error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load genre.', detail: err.message });
@@ -377,11 +412,13 @@ app.get('/api/anime/search', async (req, res) => {
   const hit = cacheGet(key);
   if (hit) return res.json(hit);
 
+  const signal = clientAbortSignal(res);
   try {
-    const payload = await animePage({ page, search: q, sort: ['SEARCH_MATCH'] });
+    const payload = await animePage({ page, search: q, sort: ['SEARCH_MATCH'] }, signal);
     if (payload.results.length) cacheSet(key, payload, 5 * 60 * 1000);
     res.json(payload);
   } catch (err) {
+    if (signal.aborted) return;             // browser cancelled this (stale) search
     console.error('anime search error:', err.message);
     res.status(err.status || 500).json({ error: 'Anime search failed.', detail: err.message });
   }
@@ -390,6 +427,9 @@ app.get('/api/anime/search', async (req, res) => {
 // TV show details -> list of seasons.
 app.get('/api/tv/:id', async (req, res) => {
   if (!requireApiKey(res)) return;
+  const key = `tv:${req.params.id}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
 
   try {
     const data = await tmdb(`/tv/${encodeURIComponent(req.params.id)}`);
@@ -401,7 +441,9 @@ app.get('/api/tv/:id', async (req, res) => {
         episodeCount: s.episode_count || 0,
       }));
 
-    res.json({ id: data.id, title: data.name, seasons });
+    const payload = { id: data.id, title: data.name, seasons };
+    cacheSet(key, payload, 30 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     console.error('tv error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load show.', detail: err.message });
@@ -411,6 +453,9 @@ app.get('/api/tv/:id', async (req, res) => {
 // Episodes for a given season.
 app.get('/api/tv/:id/season/:season', async (req, res) => {
   if (!requireApiKey(res)) return;
+  const key = `tv:${req.params.id}:s:${req.params.season}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
 
   try {
     const data = await tmdb(
@@ -423,7 +468,9 @@ app.get('/api/tv/:id/season/:season', async (req, res) => {
       still: e.still_path ? `${IMAGE_BASE}/w300${e.still_path}` : null,
     }));
 
-    res.json({ episodes });
+    const payload = { episodes };
+    cacheSet(key, payload, 30 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     console.error('season error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load season.', detail: err.message });

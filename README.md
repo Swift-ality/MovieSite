@@ -27,6 +27,33 @@ The TMDB ID is used directly (these providers accept TMDB IDs, and IMDB IDs with
 [`server.js`](server.js) (`SOURCES`) — add or edit templates there.
 Designed to run behind a **Pterodactyl egg** (included) or standalone with Node.js.
 
+### Continue Watching
+
+The site remembers where you left off, per browser (`localStorage`, no accounts):
+
+- **Title, season/episode and server** are always saved, so reopening a show — from the
+  **▶ Continue Watching** row on the home page or from anywhere else — puts you back on
+  the right episode. Finish an episode and it offers the next one (rolling over to the
+  next season / anime episode).
+- **The timestamp inside the video** is captured when the player broadcasts progress via
+  `postMessage` (CineSrc, VidEasy, VidFast do). On reopen it's passed back as a start time
+  on servers that accept one — VidFast `startAt`, CineSrc `t`, VidEasy `progress`
+  (`startParam` in `SOURCES`). Other servers start from 0:00 and a toast tells you the
+  time to skip to; your saved spot isn't overwritten until you watch past it.
+- If the player auto-advances to the next episode on its own, the episode picker and
+  history follow along without reloading the video.
+- Only messages from the player frame whose origin matches the loaded server are read,
+  and only as numbers. Titles join the row after ~60s of watching (not on a quick click).
+  Remove one with ✕, or **Clear all** per section.
+
+### Parallel search
+
+Every search queries **Movies & TV (TMDB)** and **Anime (AniList)** at the same time. The
+dropdown fills in per catalog as each answers, the results grid reuses the same request,
+and an "Also found N anime matches → Show Anime" hint (or the reverse) jumps sections
+with your query. Typing more cancels the stale requests (the server aborts the upstream
+call too), and search / trending / genre / season results are cached server-side.
+
 ---
 
 ## How it works

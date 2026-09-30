@@ -36,7 +36,17 @@
     </aside>
 
     <main class="container">
+      <!-- Continue Watching (remembered in this browser) -->
+      <section id="continue" class="continue hidden" aria-label="Continue watching">
+        <div class="continue-head">
+          <h2 class="section-title">▶ Continue Watching</h2>
+          <button id="continue-clear" class="link-btn" type="button">Clear all</button>
+        </div>
+        <div id="continue-row" class="continue-row"></div>
+      </section>
+
       <h2 id="section-title" class="section-title"></h2>
+      <div id="cross-hint" class="cross-hint hidden"></div>
       <div id="status" class="status"></div>
       <div id="results" class="grid" aria-live="polite"></div>
       <div id="feed-end" class="feed-end hidden">You've reached the end.</div>
@@ -70,6 +80,7 @@
 
       <div class="player-frame" id="player-frame">
         <div id="player-loading" class="player-loading">Loading player…</div>
+        <div id="player-toast" class="player-toast" role="status" aria-live="polite"></div>
         <iframe
           id="player"
           allowfullscreen
