@@ -132,6 +132,7 @@ you're watching, the parts at the play head first — so playback starts after a
 | `TORRENT_DHT` / `TORRENT_PUBLIC_TRACKERS` | `1` | `0` turns off DHT / the built-in public tracker list. |
 | `TORRENT_TRACKERS` | *(empty)* | Extra trackers added to every torrent. |
 | `TORRENT_DIR` | `torrent-cache` | Where pieces are stored. |
+| `SWIFT_DEFAULT` | `1` | Swift Server is the default server when enabled; `0` keeps `DEFAULT_SOURCE`. |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | *(auto)* | Use specific ffmpeg/ffprobe binaries. |
 
 On a panel, set these as server variables (the egg includes the main ones) **or** put

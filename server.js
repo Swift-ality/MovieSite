@@ -183,11 +183,13 @@ app.get('/api/config', (_req, res) => {
   const sources = torrents.enabled ? SOURCES.concat(torrents.source) : SOURCES;
   const animeSources = torrents.enabled ? ANIME_SOURCES.concat(torrents.source) : ANIME_SOURCES;
   const pick = (list, wanted, fallback) => (list.some((s) => s.id === wanted) ? wanted : fallback);
+  // Swift Servers are the default whenever they're enabled (SWIFT_DEFAULT=0 opts out).
+  const swiftFirst = torrents.enabled && String(process.env.SWIFT_DEFAULT ?? '1').trim() !== '0';
   res.json({
     sources,
-    defaultSource: pick(sources, process.env.DEFAULT_SOURCE, DEFAULT_SOURCE),
+    defaultSource: swiftFirst ? 'swift' : pick(sources, process.env.DEFAULT_SOURCE, DEFAULT_SOURCE),
     animeSources,
-    defaultAnimeSource: pick(animeSources, process.env.DEFAULT_ANIME_SOURCE, DEFAULT_ANIME_SOURCE),
+    defaultAnimeSource: swiftFirst ? 'swift' : pick(animeSources, process.env.DEFAULT_ANIME_SOURCE, DEFAULT_ANIME_SOURCE),
     hasApiKey: Boolean(TMDB_API_KEY),
     torrent: torrents.enabled ? torrents.info : null,
   });

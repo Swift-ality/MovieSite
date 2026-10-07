@@ -340,6 +340,16 @@
         savedAnimeSrc = localStorage.getItem('ss_anime_source');
         savedMode = localStorage.getItem('ss_mode');
       } catch (_) { /* ignore */ }
+      // When the site's default server changes, everyone moves to it once
+      // (a server picked afterwards is remembered again as usual).
+      try {
+        const seen = localStorage.getItem('ss_default_seen');
+        const now = `${cfg.defaultSource}|${cfg.defaultAnimeSource}`;
+        if (seen !== now) {
+          localStorage.setItem('ss_default_seen', now);
+          if (seen !== null || savedMovieSrc || savedAnimeSrc) { savedMovieSrc = null; savedAnimeSrc = null; }
+        }
+      } catch (_) { /* ignore */ }
       SRC.movies.current = (savedMovieSrc && SRC.movies.byId[savedMovieSrc]) ? savedMovieSrc
         : (SRC.movies.byId[cfg.defaultSource] ? cfg.defaultSource : (SRC.movies.list[0] && SRC.movies.list[0].id));
       SRC.anime.current = (savedAnimeSrc && SRC.anime.byId[savedAnimeSrc]) ? savedAnimeSrc
