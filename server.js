@@ -171,7 +171,27 @@ function clientAbortSignal(res) {
 }
 
 // --- Static frontend -------------------------------------------------------
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+// The page references its scripts/styles as /app.js?v=<content hash>. Proxies
+// like Cloudflare tell browsers to cache .js/.css for hours (Browser Cache TTL),
+// so without a changing URL visitors keep running old code after an update.
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const indexHtml = (() => {
+  const fs = require('fs');
+  const crypto = require('crypto');
+  return fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+    .replace(/(src|href)="\/([\w.-]+\.(?:js|css))"/g, (m, attr, file) => {
+      try {
+        const v = crypto.createHash('md5').update(fs.readFileSync(path.join(PUBLIC_DIR, file))).digest('hex').slice(0, 10);
+        return `${attr}="/${file}?v=${v}"`;
+      } catch (_) {
+        return m;
+      }
+    });
+})();
+app.get(['/', '/index.html'], (_req, res) => {
+  res.set('Cache-Control', 'no-cache').type('html').send(indexHtml);
+});
+app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
 // --- API -------------------------------------------------------------------
 
