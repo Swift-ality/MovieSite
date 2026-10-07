@@ -1,0 +1,11 @@
+{
+  "name": "webrtc-polyfill",
+  "version": "1.2.2-stub.0",
+  "private": true,
+  "description": "Stand-in for webrtc-polyfill, wired in through package.json \"overrides\". The server only talks to regular BitTorrent peers (TCP/uTP), so WebRTC is never used; this skips the native node-datachannel download/build the real package needs (fragile on ARM panels).",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "license": "MIT"
+}

@@ -4,3 +4,6 @@ npm-debug.log*
 *.log
 .DS_Store
 *.zip
+
+# Swift Servers torrent cache (TORRENT_DIR)
+torrent-cache/

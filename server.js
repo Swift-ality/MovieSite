@@ -15,12 +15,18 @@
 const path = require('path');
 const express = require('express');
 
-// dotenv is optional (only useful for local dev). Ignore if missing.
+// dotenv is optional (local dev, or a .env next to server.js). Ignore if missing.
+// Real environment/panel variables win, but a .env value also fills in any
+// variable the panel passes as an empty string.
 try {
-  require('dotenv').config();
+  const parsed = require('dotenv').config().parsed || {};
+  for (const [k, v] of Object.entries(parsed)) {
+    if (process.env[k] === '' && v !== '') process.env[k] = v;
+  }
 } catch (_) {
   /* no-op */
 }
+const { setupTorrents } = require('./lib/torrent');
 
 const app = express();
 app.disable('x-powered-by');
@@ -31,7 +37,7 @@ const PORT = parseInt(process.env.SERVER_PORT || process.env.PORT || '3000', 10)
 const HOST = '0.0.0.0';
 
 const TMDB_API_KEY = (process.env.TMDB_API_KEY || '').trim();
-const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_BASE = (process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3').replace(/\/+$/, '');
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
 // Base URL for the 111Movies source (its domain changes now and then, so it
@@ -169,14 +175,21 @@ app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] })
 
 // --- API -------------------------------------------------------------------
 
+// Torrent streaming (lib/torrent) — set up further down, before listen().
+let torrents = { enabled: false };
+
 // Small config payload the frontend needs (never exposes the API key itself).
 app.get('/api/config', (_req, res) => {
+  const sources = torrents.enabled ? SOURCES.concat(torrents.source) : SOURCES;
+  const animeSources = torrents.enabled ? ANIME_SOURCES.concat(torrents.source) : ANIME_SOURCES;
+  const pick = (list, wanted, fallback) => (list.some((s) => s.id === wanted) ? wanted : fallback);
   res.json({
-    sources: SOURCES,
-    defaultSource: DEFAULT_SOURCE,
-    animeSources: ANIME_SOURCES,
-    defaultAnimeSource: DEFAULT_ANIME_SOURCE,
+    sources,
+    defaultSource: pick(sources, process.env.DEFAULT_SOURCE, DEFAULT_SOURCE),
+    animeSources,
+    defaultAnimeSource: pick(animeSources, process.env.DEFAULT_ANIME_SOURCE, DEFAULT_ANIME_SOURCE),
     hasApiKey: Boolean(TMDB_API_KEY),
+    torrent: torrents.enabled ? torrents.info : null,
   });
 });
 
@@ -235,10 +248,12 @@ function mapAnime(m) {
 }
 
 const ANIME_PAGE_QUERY = `
-query ($page: Int, $genre: String, $search: String, $sort: [MediaSort]) {
+query ($page: Int, $genre: String, $search: String, $sort: [MediaSort], $season: MediaSeason,
+       $seasonYear: Int, $status: MediaStatus, $format: MediaFormat) {
   Page(page: $page, perPage: 24) {
     pageInfo { currentPage lastPage hasNextPage }
-    media(type: ANIME, genre: $genre, search: $search, sort: $sort, isAdult: false) {
+    media(type: ANIME, genre: $genre, search: $search, sort: $sort, season: $season,
+          seasonYear: $seasonYear, status: $status, format: $format, isAdult: false) {
       id
       title { english romaji }
       coverImage { large medium }
@@ -306,6 +321,31 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+// Look a title up by IMDB id (tt1234567) — search accepts IMDB ids and links.
+app.get('/api/find', async (req, res) => {
+  if (!requireApiKey(res)) return;
+  const m = /\b(tt\d{5,10})\b/i.exec(String(req.query.imdb || ''));
+  if (!m) return res.status(400).json({ error: 'Not an IMDB id (expected tt1234567).' });
+  const id = m[1].toLowerCase();
+  const key = `find:${id}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
+  try {
+    const data = await tmdb(`/find/${id}`, { external_source: 'imdb_id' }, clientAbortSignal(res));
+    const results = [
+      ...(data.movie_results || []).map((r) => mapMedia({ ...r, media_type: 'movie' })),
+      ...(data.tv_results || []).map((r) => mapMedia({ ...r, media_type: 'tv' })),
+    ];
+    const payload = { results, page: 1, totalPages: 1, imdb: id };
+    cacheSet(key, payload, 60 * 60 * 1000);
+    res.json(payload);
+  } catch (err) {
+    if (res.writableEnded || res.destroyed) return;
+    console.error('find error:', err.message);
+    res.status(err.status || 500).json({ error: 'IMDB lookup failed.', detail: err.message });
+  }
+});
+
 // Trending this week (front page), paginated for infinite scroll.
 app.get('/api/trending', async (req, res) => {
   if (!requireApiKey(res)) return;
@@ -327,6 +367,38 @@ app.get('/api/trending', async (req, res) => {
   } catch (err) {
     console.error('trending error:', err.message);
     res.status(err.status || 500).json({ error: 'Failed to load trending.', detail: err.message });
+  }
+});
+
+// Browse lists for the sidebar — each pages through TMDB's full catalog.
+const TMDB_LISTS = {
+  popular: { path: '/movie/popular', type: 'movie' },
+  top_rated: { path: '/movie/top_rated', type: 'movie' },
+  now_playing: { path: '/movie/now_playing', type: 'movie' },
+  upcoming: { path: '/movie/upcoming', type: 'movie' },
+  tv_popular: { path: '/tv/popular', type: 'tv' },
+  tv_top_rated: { path: '/tv/top_rated', type: 'tv' },
+  tv_on_air: { path: '/tv/on_the_air', type: 'tv' },
+};
+app.get('/api/list/:list', async (req, res) => {
+  if (!requireApiKey(res)) return;
+  const list = TMDB_LISTS[req.params.list];
+  if (!list) return res.status(404).json({ error: 'Unknown list.' });
+  const page = clampPage(req.query.page);
+  const key = `list:${req.params.list}:${page}`;
+  const hit = cacheGet(key);
+  if (hit) return res.json(hit);
+  try {
+    const data = await tmdb(list.path, { page: String(page) });
+    const results = (data.results || [])
+      .filter((r) => r.poster_path)
+      .map((r) => mapMedia({ ...r, media_type: list.type }));
+    const payload = { results, page: data.page || page, totalPages: Math.min(data.total_pages || page, 500) };
+    cacheSet(key, payload, 10 * 60 * 1000);
+    res.json(payload);
+  } catch (err) {
+    console.error('list error:', err.message);
+    res.status(err.status || 500).json({ error: 'Failed to load list.', detail: err.message });
   }
 });
 
@@ -379,16 +451,31 @@ app.get('/api/anime/genres', (_req, res) => {
   res.json({ genres: ANIME_GENRES.map((name) => ({ id: name, name })) });
 });
 
-// Browse anime (trending by default, or filtered by genre), paginated.
+// Anime browse lists (sidebar): sort / season / format presets for AniList.
+function currentAnimeSeason() {
+  const d = new Date();
+  const m = d.getUTCMonth();
+  return { season: ['WINTER', 'SPRING', 'SUMMER', 'FALL'][Math.floor(m / 3)], seasonYear: d.getUTCFullYear() };
+}
+const ANIME_LISTS = {
+  popular: () => ({ sort: ['POPULARITY_DESC'] }),
+  top_rated: () => ({ sort: ['SCORE_DESC', 'POPULARITY_DESC'] }),
+  season: () => ({ sort: ['POPULARITY_DESC'], ...currentAnimeSeason() }),
+  upcoming: () => ({ sort: ['POPULARITY_DESC'], status: 'NOT_YET_RELEASED' }),
+  movies: () => ({ sort: ['POPULARITY_DESC'], format: 'MOVIE' }),
+};
+
+// Browse anime (trending by default, a list preset, or a genre), paginated.
 app.get('/api/anime/browse', async (req, res) => {
   const page = clampPage(req.query.page);
   const genre = String(req.query.genre || '').trim();
-  const key = `anime:browse:${genre}:${page}`;
+  const listId = ANIME_LISTS[req.query.list] ? String(req.query.list) : '';
+  const key = `anime:browse:${genre}:${listId}:${page}`;
   const hit = cacheGet(key);
   if (hit) return res.json(hit);
 
   const sort = genre ? ['POPULARITY_DESC'] : ['TRENDING_DESC', 'POPULARITY_DESC'];
-  const vars = { page, sort, genre: genre || undefined };
+  const vars = { page, sort, genre: genre || undefined, ...(listId ? ANIME_LISTS[listId]() : {}) };
   try {
     let payload = await animePage(vars);
     if (!payload.results.length) {          // AniList sometimes flakes -> retry once
@@ -476,6 +563,24 @@ app.get('/api/tv/:id/season/:season', async (req, res) => {
     res.status(err.status || 500).json({ error: 'Failed to load season.', detail: err.message });
   }
 });
+
+// Torrent streaming: finds torrents for a title (Stremio addons / Torznab),
+// downloads the chosen one here and streams it while it downloads.
+try {
+  torrents = setupTorrents(app, {
+    appDir: __dirname,
+    port: PORT,
+    tmdb,
+    anilist,
+    cacheGet,
+    cacheSet,
+    clientAbortSignal,
+    hasTmdb: Boolean(TMDB_API_KEY),
+  });
+} catch (err) {
+  console.error('[torrent] disabled, setup failed:', err.message);
+  torrents = { enabled: false };
+}
 
 // Health check (handy for uptime monitors).
 app.get('/healthz', (_req, res) => res.json({ ok: true }));

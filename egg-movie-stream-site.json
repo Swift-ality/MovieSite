@@ -7,7 +7,7 @@
     "exported_at": "2026-08-19T00:00:00+00:00",
     "name": "SwiftWatchesMovies",
     "author": "pvmook@planet.nl",
-    "description": "A Node.js web app to browse & stream Movies/TV (TheMovieDB) and Anime (AniList), with genre sidebars and switchable embed sources (111Movies, VidFast, VidSrc, CineSrc, VidEasy). Serves the UI on the allocated port.",
+    "description": "SwiftWatchesMovies: a Node.js site that browses TheMovieDB (movies & TV) and AniList (anime), plays them through embeddable players, and - with Swift Servers - streams torrents through its own player. Serves the UI on the allocated port.",
     "features": null,
     "docker_images": {
         "Node.js 20": "ghcr.io/pterodactyl/yolks:nodejs_20",
@@ -52,22 +52,22 @@
         },
         {
             "name": "Default Source",
-            "description": "Which movie/TV source is selected first: 111movies, vidfast, vidsrc, cinesrc, or videasy. Viewers can switch per-title in the player.",
+            "description": "Which movie/TV server is selected first: 111movies, vidfast, vidsrc, cinesrc, videasy, or swift (Swift Servers, needs a torrent source below). Viewers can switch per-title in the player.",
             "env_variable": "DEFAULT_SOURCE",
             "default_value": "111movies",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|in:111movies,vidfast,vidsrc,cinesrc,videasy",
+            "rules": "required|in:111movies,vidfast,vidsrc,cinesrc,videasy,swift",
             "field_type": "text"
         },
         {
             "name": "Default Anime Source",
-            "description": "Which anime source is selected first: vidplus, videasy, or megaplay. Viewers can switch per-title in the player.",
+            "description": "Which anime server is selected first: vidplus, videasy, megaplay, or swift (Swift Servers). Viewers can switch per-title in the player.",
             "env_variable": "DEFAULT_ANIME_SOURCE",
             "default_value": "vidplus",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|in:vidplus,videasy,megaplay",
+            "rules": "required|in:vidplus,videasy,megaplay,swift",
             "field_type": "text"
         },
         {
@@ -128,6 +128,86 @@
             "user_viewable": false,
             "user_editable": true,
             "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Stremio Addons",
+            "description": "Torrent sources for the Swift Servers (our own player). Stremio stream addon URL(s) - the manifest URL you would install in Stremio (Torrentio-style addons). Separate several with spaces. Leave both this and Torznab empty to hide Swift Servers.",
+            "env_variable": "STREMIO_ADDONS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:4000",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Torznab URLs",
+            "description": "Optional extra torrent sources: Torznab feed URL(s) from Jackett or Prowlarr, separated by spaces.",
+            "env_variable": "TORZNAB_URLS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:4000",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Torznab API Key",
+            "description": "API key for the Torznab URLs (Jackett/Prowlarr), unless it is already inside the URL.",
+            "env_variable": "TORZNAB_APIKEY",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Cache Size (GB)",
+            "description": "Disk space torrents may use. Idle torrents are deleted first; keep this below the server disk limit.",
+            "env_variable": "TORRENT_CACHE_GB",
+            "default_value": "20",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:10000",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Max Active Torrents",
+            "description": "How many torrents can stream at the same time.",
+            "env_variable": "TORRENT_MAX_ACTIVE",
+            "default_value": "3",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:50",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Allow Transcoding",
+            "description": "1 = re-encode videos the browser cannot play (e.g. HEVC in Firefox) to H.264 720p. CPU heavy; one at a time. 0 = never.",
+            "env_variable": "TORRENT_TRANSCODE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Torrent Port",
+            "description": "Optional: an extra allocation port for incoming peers (faster). 0 = outgoing connections only.",
+            "env_variable": "TORRENT_PORT",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Swift Servers: Upload Limit (KB/s)",
+            "description": "Limit seeding/upload speed in KB/s. 0 = unlimited.",
+            "env_variable": "TORRENT_UPLOAD_KBPS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0",
             "field_type": "text"
         }
     ]

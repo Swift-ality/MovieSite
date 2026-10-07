@@ -49,10 +49,17 @@ if [ "${AUTO_UPDATE}" = "1" ] && [ -n "${GIT_ADDRESS}" ]; then
     fi
 fi
 
-# 3) Install dependencies when missing, or after an update (deps may have changed).
-if [ -f package.json ] && { [ ! -d node_modules ] || [ "${UPDATED}" = "1" ]; }; then
+# 3) Install dependencies when missing, after an update, or whenever package.json /
+#    package-lock.json changed since the last install (a deploy may add packages).
+deps_sum() { cat package.json package-lock.json 2>/dev/null | cksum; }
+STAMP=node_modules/.deps-stamp
+if [ -f package.json ] && { [ ! -d node_modules ] || [ "${UPDATED}" = "1" ] || [ "$(deps_sum)" != "$(cat "${STAMP}" 2>/dev/null)" ]; }; then
     echo "Installing dependencies ..."
-    npm install --omit=dev --no-audit --no-fund
+    if npm install --omit=dev --no-audit --no-fund; then
+        deps_sum > "${STAMP}"
+    else
+        echo "npm install failed - starting with the existing node_modules"
+    fi
 fi
 
 echo "Starting server ..."

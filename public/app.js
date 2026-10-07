@@ -33,6 +33,18 @@
   const playerLoading = $('#player-loading');
   const toastEl = $('#player-toast');
 
+  // Torrent player for the "⚡ Torrent" server (public/torrent.js).
+  let torrentInfo = null;    // from /api/config when the server has torrent sources
+  const torrentPlayer = window.SwiftTorrent ? window.SwiftTorrent.create(playerFrame, {
+    toast: (msg) => toast(msg),
+    onProgress: (position, duration) => {
+      if (currentMedia && currentItem) applyProgress({ position, duration });
+    },
+    onEnded: () => onTorrentEnded(),
+    toggleFullscreen: () => fullscreenBtn.click(),
+    canTranscode: () => Boolean(torrentInfo && torrentInfo.transcode),
+  }) : null;
+
   // Streaming sources per content group, from /api/config.
   const SRC = {
     movies: { list: [], byId: {}, current: null },
@@ -52,6 +64,7 @@
   let feedKind = 'default';     // 'default' | 'genre' | 'search'
   let browseKind = 'default';   // remembered browse state to restore when search clears
   let browseGenre = null;       // { id, name }
+  let browseList = null;        // { id, name } — Popular, Top Rated, …
   let query = '';
   let page = 0;
   let totalPages = 1;
@@ -120,6 +133,11 @@
   }
   function safePoster(p) {
     return typeof p === 'string' && /^https:\/\//.test(p) ? p : null;
+  }
+  // "tt0111161" or an IMDB link -> "tt0111161"
+  function imdbIdOf(q) {
+    const m = /(?:^|imdb\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/|\s)(tt\d{5,10})(?:\b|$)/i.exec(String(q || '').trim());
+    return m ? m[1].toLowerCase() : null;
   }
 
   // --- watch history ("Continue Watching") ---------------------------------
@@ -308,6 +326,13 @@
       SRC.movies.list.forEach((s) => { SRC.movies.byId[s.id] = s; });
       SRC.anime.list = cfg.animeSources || [];
       SRC.anime.list.forEach((s) => { SRC.anime.byId[s.id] = s; });
+      torrentInfo = cfg.torrent || null;
+      if (!torrentPlayer) {          // player script missing: hide the torrent server
+        for (const g of ['movies', 'anime']) {
+          SRC[g].list = SRC[g].list.filter((s) => !s.torrent);
+          delete SRC[g].byId.torrent;
+        }
+      }
 
       let savedMovieSrc = null, savedAnimeSrc = null, savedMode = null;
       try {
@@ -328,16 +353,31 @@
     } catch (_) { /* non-fatal */ }
 
     setMode(contentType);
+
+    // Deep link: /?imdb=tt0111161 opens that title straight away.
+    const deep = imdbIdOf(new URLSearchParams(location.search).get('imdb'));
+    if (deep) {
+      getJson('/api/find?imdb=' + deep).then((d) => {
+        const item = d.results && d.results[0];
+        if (item) openItem(item);
+        else setStatus(`No movie or show found for IMDB id ${escapeHtml(deep)}.`, true);
+      }).catch((err) => setStatus('❌ ' + escapeHtml(err.message), true));
+    }
   }
 
-  // Fill the Server dropdown with the sources for what's being played.
+  // Fill the Server dropdown with the sources for what's being played. Swift
+  // Servers (our own player, torrents) get their own section above the embeds.
   function populateSourceSelect(grp) {
     const s = SRC[grp];
     if (!s.list.length) { sourcePicker.classList.add('hidden'); return; }
     sourcePicker.classList.remove('hidden');
-    sourceSelect.innerHTML = s.list
-      .map((x) => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`)
-      .join('');
+    const opt = (x) => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`;
+    const swift = s.list.filter((x) => x.torrent);
+    const embeds = s.list.filter((x) => !x.torrent);
+    sourceSelect.innerHTML = swift.length
+      ? `<optgroup label="${escapeHtml(swift[0].group || 'Swift Servers')}">${swift.map(opt).join('')}</optgroup>` +
+        `<optgroup label="Embed servers">${embeds.map(opt).join('')}</optgroup>`
+      : embeds.map(opt).join('');
     sourceSelect.value = s.current;
   }
 
@@ -353,6 +393,7 @@
     hideSuggestions();
     browseKind = 'default';
     browseGenre = null;
+    browseList = null;
     const q = String(opts.query || '').trim();
     if (q) {
       searchInput.value = q;
@@ -390,11 +431,35 @@
     if (contentType === mode) renderGenres(genresCache[mode]);
   }
 
+  // Browse lists above the genres; each pages through the whole TMDB / AniList catalog.
+  const BROWSE_LISTS = {
+    movies: [
+      { id: 'popular', name: '⭐ Popular Movies' },
+      { id: 'top_rated', name: '🏆 Top Rated Movies' },
+      { id: 'now_playing', name: '🎟️ Now Playing' },
+      { id: 'upcoming', name: '📅 Upcoming' },
+      { id: 'tv_popular', name: '📺 Popular TV' },
+      { id: 'tv_top_rated', name: '🏅 Top Rated TV' },
+      { id: 'tv_on_air', name: '📡 On the Air' },
+    ],
+    anime: [
+      { id: 'popular', name: '⭐ Popular' },
+      { id: 'top_rated', name: '🏆 Top Rated' },
+      { id: 'season', name: '🌱 This Season' },
+      { id: 'upcoming', name: '📅 Upcoming' },
+      { id: 'movies', name: '🎬 Anime Movies' },
+    ],
+  };
+
   function renderGenres(genres) {
     const trendingLabel = contentType === 'anime' ? '🔥 Trending Anime' : '🔥 Trending';
-    const items = [`<button class="genre-item" data-all="1">${trendingLabel}</button>`]
+    const item = (attrs, label) => `<button class="genre-item" ${attrs}>${escapeHtml(label)}</button>`;
+    const items = ['<div class="genre-head">Browse</div>', item('data-all="1"', trendingLabel)]
+      .concat((BROWSE_LISTS[contentType] || []).map((l) =>
+        item(`data-list="${escapeHtml(l.id)}" data-name="${escapeHtml(l.name)}"`, l.name)))
+      .concat(genres.length ? ['<div class="genre-head">Genres</div>'] : [])
       .concat(genres.map((g) =>
-        `<button class="genre-item" data-id="${escapeHtml(String(g.id))}" data-name="${escapeHtml(g.name)}">${escapeHtml(g.name)}</button>`));
+        item(`data-id="${escapeHtml(String(g.id))}" data-name="${escapeHtml(g.name)}"`, g.name)));
     genreList.innerHTML = items.join('');
     highlightGenre();
   }
@@ -407,10 +472,16 @@
     hideSuggestions();
     cancelParallelSearch();
     if (btn.dataset.all) {
-      browseKind = 'default'; browseGenre = null; feedKind = 'default';
+      browseKind = 'default'; browseGenre = null; browseList = null; feedKind = 'default';
+    } else if (btn.dataset.list) {
+      browseKind = 'list';
+      browseList = { id: btn.dataset.list, name: btn.dataset.name };
+      browseGenre = null;
+      feedKind = 'list';
     } else {
       browseKind = 'genre';
       browseGenre = { id: btn.dataset.id, name: btn.dataset.name };
+      browseList = null;
       feedKind = 'genre';
     }
     highlightGenre();
@@ -420,6 +491,7 @@
   function highlightGenre() {
     [...genreList.querySelectorAll('.genre-item')].forEach((b) => {
       const isActive = (feedKind === 'default' && b.dataset.all) ||
+                       (feedKind === 'list' && browseList && b.dataset.list === browseList.id) ||
                        (feedKind === 'genre' && browseGenre && b.dataset.id === String(browseGenre.id));
       b.classList.toggle('active', Boolean(isActive));
     });
@@ -427,18 +499,24 @@
 
   // --- feed / infinite scroll ---------------------------------------------
   function feedUrl(next) {
+    if (feedKind === 'search' && imdbIdOf(query)) {
+      return contentType === 'anime' ? null : '/api/find?imdb=' + imdbIdOf(query);
+    }
     if (contentType === 'anime') {
       if (feedKind === 'search') return '/api/anime/search?q=' + encodeURIComponent(query) + '&page=' + next;
       if (feedKind === 'genre') return '/api/anime/browse?genre=' + encodeURIComponent(browseGenre.name) + '&page=' + next;
+      if (feedKind === 'list') return '/api/anime/browse?list=' + encodeURIComponent(browseList.id) + '&page=' + next;
       return '/api/anime/browse?page=' + next;
     }
     if (feedKind === 'search') return '/api/search?q=' + encodeURIComponent(query) + '&page=' + next;
+    if (feedKind === 'list') return '/api/list/' + encodeURIComponent(browseList.id) + '?page=' + next;
     if (feedKind === 'genre') return '/api/discover?genre=' + encodeURIComponent(browseGenre.id) + '&page=' + next;
     return '/api/trending?page=' + next;
   }
 
   function feedTitle() {
     if (feedKind === 'search') return `Results for “${query}”`;
+    if (feedKind === 'list') return browseList.name;
     if (feedKind === 'genre') return `${browseGenre.name} ${contentType === 'anime' ? 'Anime' : 'Movies'}`;
     return contentType === 'anime' ? '🔥 Trending Anime' : '🔥 Trending this week';
   }
@@ -468,8 +546,15 @@
     const shared = feedKind === 'search' && next === 1 && psearch && psearch.q === query
       ? psearch.promises[contentType]
       : null;
+    const url = shared ? null : feedUrl(next);
+    if (!shared && !url) {                  // nothing to fetch (e.g. an IMDB id in the Anime section)
+      loading = false;
+      done = true;
+      if (next === 1) setStatus('No results found.');
+      return;
+    }
 
-    (shared || getJson(feedUrl(next))).then((data) => {
+    (shared || getJson(url)).then((data) => {
       if (myToken !== feedToken) return;   // a newer feed replaced this one
       const results = data.results || [];
       page = data.page || next;
@@ -527,13 +612,15 @@
     cancelParallelSearch();
     const ctrl = new AbortController();
     const enc = encodeURIComponent(q);
+    const imdb = imdbIdOf(q);                // an IMDB id/link finds that exact title
     const ps = {
       q,
       ctrl,
       results: { movies: undefined, anime: undefined },   // undefined = still searching
       promises: {
-        movies: getJson('/api/search?q=' + enc + '&page=1', ctrl.signal),
-        anime: getJson('/api/anime/search?q=' + enc + '&page=1', ctrl.signal),
+        movies: getJson(imdb ? '/api/find?imdb=' + imdb : '/api/search?q=' + enc + '&page=1', ctrl.signal),
+        anime: imdb ? Promise.resolve({ results: [], page: 1, totalPages: 1 })
+          : getJson('/api/anime/search?q=' + enc + '&page=1', ctrl.signal),
       },
     };
     for (const g of ['movies', 'anime']) {
@@ -816,19 +903,20 @@
     const src = SRC[grp].byId[SRC[grp].current] || SRC[grp].list[0];
     if (!src) return;
 
-    let url;
     let season = null, episode = null;
-    if (k === 'movie' || k === 'anime-movie') {
-      url = buildUrl(src.movie, { id: currentMedia.id });
-    } else if (k === 'tv') {
+    if (k === 'tv') {
       season = Number(seasonSelect.value);
       episode = Number(episodeSelect.value);
       if (!Number.isInteger(season) || !Number.isInteger(episode) || episode < 1) return;
-      url = buildUrl(src.tv, { id: currentMedia.id, season, episode });
-    } else {
+    } else if (k === 'anime-show') {
       episode = Number(episodeSelect.value);
       if (!Number.isInteger(episode) || episode < 1) return;
-      url = buildUrl(src.show, { id: currentMedia.id, episode });
+    }
+    let url = null;
+    if (!src.torrent) {
+      if (k === 'movie' || k === 'anime-movie') url = buildUrl(src.movie, { id: currentMedia.id });
+      else if (k === 'tv') url = buildUrl(src.tv, { id: currentMedia.id, season, episode });
+      else url = buildUrl(src.show, { id: currentMedia.id, episode });
     }
     currentMedia.season = season;
     currentMedia.episode = episode;
@@ -838,20 +926,22 @@
     const at = prev && !prev.completed && prev.season === season && prev.episode === episode &&
       prev.position > 15 && (!prev.duration || prev.position < prev.duration * 0.95)
       ? Math.floor(prev.position) : 0;
-    const canJump = Boolean(at && src.startParam);
-    if (canJump) url = withParam(url, src.startParam, at);
+    const canJump = Boolean(at && (src.startParam || src.torrent));
+    if (canJump && src.startParam) url = withParam(url, src.startParam, at);
     // If this server can't jump there, it starts from 0:00 — don't let its early
     // progress reports overwrite your spot until you actually watch past it.
     resumeFloor = canJump ? 0 : at;
 
-    setIframe(url);
-    recordWatch();
-    armEngagement();
-
     const epLabel = k === 'tv' ? `S${season} · E${episode}` : (k === 'anime-show' ? `Episode ${episode}` : '');
     const why = pendingResume && pendingResume.type;
     pendingResume = null;
-    if (canJump) toast(`▶ Resuming${epLabel ? ' ' + epLabel : ''} at ${fmtTime(at)}`);
+    if (src.torrent) playTorrent(at, epLabel, why === 'next');
+    else setIframe(url);
+    recordWatch();
+    armEngagement();
+
+    if (src.torrent && at) { /* the torrent player shows "Resuming at …" itself */ }
+    else if (canJump) toast(`▶ Resuming${epLabel ? ' ' + epLabel : ''} at ${fmtTime(at)}`);
     else if (at) toast(`⏱ ${epLabel ? epLabel + ' — you' : 'You'} left off at ${fmtTime(at)} (this server can't jump there)`);
     else if (why === 'next') toast(`▶ Up next: ${epLabel}`);
     else if (why === 'restart') toast(`↺ Starting over from ${epLabel || 'the beginning'}`);
@@ -1068,8 +1158,71 @@
     toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4500);
   }
 
+  // --- torrent server ------------------------------------------------------
+  // binge: moving on to the next episode — keep using the torrent picked before.
+  function playTorrent(at, epLabel, binge) {
+    iframe.removeAttribute('src');
+    playingSite = '';
+    playerLoading.style.display = 'none';
+    torrentPlayer.play({
+      kind: currentMedia.kind,
+      id: currentMedia.id,
+      season: currentMedia.season,
+      episode: currentMedia.episode,
+      at,
+      binge: Boolean(binge),
+      titleKey: keyOf(currentItem),
+      label: [currentItem.title + (currentItem.year ? ` (${currentItem.year})` : ''), epLabel].filter(Boolean).join(' · '),
+    });
+  }
+
+  // The episode after the one playing (null at the end of a show / for films).
+  function upcomingEpisode() {
+    const m = currentMedia;
+    if (!m) return null;
+    if (m.kind === 'tv') {
+      const cur = currentSeasons.find((s) => s.seasonNumber === m.season);
+      if (cur && m.episode < cur.episodeCount) return { season: m.season, episode: m.episode + 1 };
+      const next = currentSeasons.find((s) => s.seasonNumber > m.season && s.seasonNumber >= 1);
+      return next ? { season: next.seasonNumber, episode: 1 } : null;
+    }
+    if (m.kind === 'anime-show') {
+      const count = currentItem && currentItem.episodes;
+      return !count || m.episode < count ? { season: null, episode: m.episode + 1 } : null;
+    }
+    return null;
+  }
+  function goToEpisode(n) {
+    if (!currentMedia) return;
+    pendingResume = { type: 'next' };
+    if (currentMedia.kind === 'tv') {
+      if (seasonSelect.value !== String(n.season)) {
+        seasonSelect.value = String(n.season);
+        loadEpisodes(currentTvId, n.season, true, n.episode);
+        return;
+      }
+      episodeSelect.value = String(n.episode);
+    } else {
+      if (![...episodeSelect.options].some((o) => o.value === String(n.episode))) {
+        episodeSelect.insertAdjacentHTML('beforeend', `<option value="${n.episode}">Episode ${n.episode}</option>`);
+      }
+      episodeSelect.value = String(n.episode);
+    }
+    playCurrent();
+  }
+  // Finished an episode in the torrent player: mark it watched, offer the next.
+  function onTorrentEnded() {
+    if (!currentMedia || !currentItem) return;
+    applyProgress({ ended: true });
+    const n = upcomingEpisode();
+    if (!n) return;
+    const label = currentMedia.kind === 'tv' ? `S${n.season} · E${n.episode}` : `Episode ${n.episode}`;
+    torrentPlayer.showUpNext(label, 10, () => goToEpisode(n));
+  }
+
   // --- modal ---------------------------------------------------------------
   function setIframe(src) {
+    if (torrentPlayer) torrentPlayer.stop();
     if (!src) {
       iframe.removeAttribute('src');
       playingSite = '';
@@ -1096,6 +1249,7 @@
     clearTimeout(engageTimer);
     clearTimeout(toastTimer);
     toastEl.classList.remove('show');
+    if (torrentPlayer) torrentPlayer.stop();   // reports the final position first
     modal.classList.add('hidden');
     document.body.style.overflow = '';
     iframe.removeAttribute('src');
@@ -1144,7 +1298,9 @@
   document.addEventListener('webkitfullscreenchange', updateFsLabel);
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden') && !fsElement()) closeModal();
+    if (modal.classList.contains('hidden')) return;
+    if (e.key !== 'Escape' && torrentPlayer && torrentPlayer.active() && torrentPlayer.handleKey(e)) return;
+    if (e.key === 'Escape' && !fsElement()) closeModal();
   });
 
   // --- go ------------------------------------------------------------------
