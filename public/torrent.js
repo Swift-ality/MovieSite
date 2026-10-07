@@ -309,7 +309,40 @@
       const pref = (prefs.shows || {})[req.titleKey] || {};
       let data;
       try {
-        data = await getJson(`/api/torrents/search?${reqQuery({ ph: pref.hash, pg: pref.group, pr: pref.res })}`, { signal: ctrl.signal });
+        const prefer = { ph: pref.hash, pg: pref.group, pr: pref.res };
+        data = await getJson(`/api/torrents/search?${reqQuery(prefer)}`, { signal: ctrl.signal });
+        if (data.client && data.client.length) {
+          // Some addons (Torrentio, for one) refuse the server's datacenter IP but
+          // answer viewers' browsers, the way the Stremio app uses them. Ask them
+          // from here and let the server merge, rank and sign the results.
+          setStatus('Searching Swift Servers…', esc(`${req.label || ''} — asking ${data.client.map((c) => c.name).join(', ')}`));
+          const sources = await Promise.all(data.client.map(async (c) => {
+            const t = new AbortController();
+            const timer = setTimeout(() => t.abort(), 15000);
+            const stop = () => t.abort();
+            ctrl.signal.addEventListener('abort', stop);
+            try {
+              const r = await fetch(c.url, { signal: t.signal });
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const j = await r.json();
+              return { base: c.base, streams: Array.isArray(j.streams) ? j.streams.slice(0, 200) : [] };
+            } catch (err) {
+              return { base: c.base, error: ctrl.signal.aborted ? 'cancelled' : (t.signal.aborted ? 'timed out' : err.message) };
+            } finally {
+              clearTimeout(timer);
+              ctrl.signal.removeEventListener('abort', stop);
+            }
+          }));
+          if (ctrl.signal.aborted) return;
+          const body = Object.fromEntries(reqQuery(prefer));
+          body.sources = sources;
+          data = await getJson('/api/torrents/rank', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+          });
+        }
       } catch (err) {
         if (ctrl.signal.aborted) return;
         setStatus('Couldn\'t search for torrents', esc(err.message), [{ act: 'retry', label: '↻ Retry', primary: true }], false);

@@ -102,8 +102,13 @@ you're watching, the parts at the play head first — so playback starts after a
   (5 minutes after you close the player), `TORRENT_CACHE_GB` caps the total,
   `TORRENT_MAX_ACTIVE` the number streaming at once, and files over
   `TORRENT_MAX_FILE_GB` aren't offered.
+- **Addons that block servers:** some addons (Torrentio included) refuse datacenter IPs
+  like a VPS's. When an addon answers the server with 403/429, the viewer's browser asks
+  it directly instead — the same way the Stremio app uses addons — and the server merges,
+  ranks and signs those results. Such torrents must match the title by name once their
+  metadata arrives, and their trackers may not point at private/local addresses.
 - **Not an open relay:** stream lists carry server-signed tokens, so visitors can only
-  start torrents this server found for a title — not arbitrary ones.
+  start torrents found for the title they opened — not arbitrary ones.
 - ⚠️ Unlike the embeds, **this server itself downloads and uploads (seeds) via
   BitTorrent**, from its own IP address. Rights holders' notices go to whoever owns that
   IP (your host). Only use it for content you're allowed to download and share;
