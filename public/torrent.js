@@ -223,8 +223,22 @@
     const btn = (act) => root.querySelector(`[data-act="${act}"]`);
     autoBox.checked = Boolean(prefs.autoPlay);
 
+    // Subtitles are drawn in our own layer (.tp-subs) from the track's active
+    // cues instead of by the browser: native cue rendering doesn't reliably show
+    // when the player container (rather than the <video>) is fullscreen, and our
+    // layer can move up above the control bar.
+    const subsEl = document.createElement('div');
+    subsEl.className = 'tp-subs';
+    subsEl.setAttribute('aria-hidden', 'true');
+    video.insertAdjacentElement('afterend', subsEl);
     const subTrack = video.addTextTrack('subtitles', 'Subtitles');
-    subTrack.mode = 'hidden';
+    subTrack.mode = 'hidden';                   // still fires cuechange; we render
+    const cueHtml = (t) => esc(t).replace(/&lt;(\/?)([biu])&gt;/g, '<$1$2>').replace(/\n/g, '<br>');
+    function renderSubs() {
+      const active = subTrack.activeCues ? [...subTrack.activeCues] : [];
+      subsEl.innerHTML = active.map((c) => `<span>${cueHtml(c.text)}</span>`).join('<br>');
+    }
+    subTrack.addEventListener('cuechange', renderSubs);
 
     const S = {
       req: null,
@@ -900,7 +914,7 @@
       S.subCtrl = null;
       const cues = subTrack.cues;
       while (cues && cues.length) subTrack.removeCue(cues[0]);
-      subTrack.mode = 'hidden';
+      subsEl.innerHTML = '';
     }
 
     // Subtitle cue times are file times; shift them onto the current stream's clock.
@@ -910,7 +924,6 @@
       if (!sub || !S.pb) return;
       const ctrl = new AbortController();
       S.subCtrl = ctrl;
-      subTrack.mode = 'showing';
       const t = Math.max(0, from || 0);
       S.subFrom = t;
       const url = sub.kind === 'embedded' ? `${sub.url}?t=${t.toFixed(2)}` : sub.url;
