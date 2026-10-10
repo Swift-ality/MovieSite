@@ -39,10 +39,19 @@ if [ ! -f package.json ] && [ -n "${GIT_ADDRESS}" ]; then
 fi
 
 # 2) Optional update-on-boot (works for both git and manual installs).
+#    On when the panel's AUTO_UPDATE is 1, or SELF_UPDATE=1 is set in .env
+#    (the site then also restarts itself when GitHub has a newer version).
+if [ "${SELF_UPDATE}" = "1" ] || grep -qs '^SELF_UPDATE=1' .env; then AUTO_UPDATE=1; fi
 if [ "${AUTO_UPDATE}" = "1" ] && [ -n "${GIT_ADDRESS}" ]; then
     if [ -d .git ]; then
-        echo "Updating (git pull) ..."
-        if git pull; then UPDATED=1; else echo "git pull failed, using existing files"; fi
+        echo "Updating from git (${BRANCH:-main}) ..."
+        if git -c safe.directory=/home/container fetch origin "${BRANCH:-main}" &&
+           git -c safe.directory=/home/container reset --hard "origin/${BRANCH:-main}"; then
+            # (step 3 reinstalls packages only if package.json / the lockfile changed)
+            echo "Now at $(git -c safe.directory=/home/container log -1 --format='%h %s')"
+        else
+            echo "git update failed, using existing files"
+        fi
     else
         echo "Updating (fresh fetch from ${GIT_ADDRESS}) ..."
         fresh_clone

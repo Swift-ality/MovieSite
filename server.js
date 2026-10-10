@@ -607,6 +607,40 @@ try {
 // Health check (handy for uptime monitors).
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
+// --- Self-update -----------------------------------------------------------
+// SELF_UPDATE=1 (env or .env): every SELF_UPDATE_MINUTES (default 5) check the
+// git remote; when a newer commit exists, wait until nobody is streaming, then
+// exit so the panel restarts the server and start.sh pulls the update.
+if (String(process.env.SELF_UPDATE || '') === '1') {
+  const { execFile } = require('child_process');
+  const git = (args) => new Promise((resolve, reject) => {
+    execFile('git', ['-c', `safe.directory=${__dirname}`, ...args], { cwd: __dirname, timeout: 60000 },
+      (err, out) => (err ? reject(err) : resolve(String(out).trim())));
+  });
+  const branch = process.env.BRANCH || 'main';
+  const minutes = Math.max(1, Number(process.env.SELF_UPDATE_MINUTES) || 5);
+  let pending = null;
+  const check = async () => {
+    try {
+      if (!pending) {
+        await git(['fetch', '--quiet', 'origin', branch]);
+        const [local, remote] = await Promise.all([git(['rev-parse', 'HEAD']), git(['rev-parse', `origin/${branch}`])]);
+        if (local === remote) return;
+        pending = remote.slice(0, 7);
+        console.log(`[update] new version ${pending} on ${branch}; restarting when nobody is streaming`);
+      }
+      if (torrents.enabled && torrents.busy && torrents.busy()) return;   // try again next round
+      console.log(`[update] restarting to install ${pending} ...`);
+      setTimeout(() => process.exit(1), 500);   // non-zero exit -> the panel restarts us
+    } catch (err) {
+      console.error('[update] check failed:', err.message);
+    }
+  };
+  setInterval(check, pending ? 60000 : minutes * 60000).unref();
+  setTimeout(check, 60000).unref();
+  console.log(`[update] self-update on: checking ${branch} every ${minutes} min`);
+}
+
 // --- Start -----------------------------------------------------------------
 app.listen(PORT, HOST, () => {
   console.log(`Movie site listening on http://${HOST}:${PORT}`);
